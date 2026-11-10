@@ -1,0 +1,19 @@
+Package: ggit
+Version: 0.1.0
+Architecture: all
+Maintainer: rbshah29 <rbshah0029@gmail.com>
+Installed-Size: 164
+Depends: python3 (>= 3.8), git
+Recommends: python3-gi, gir1.2-gtk-3.0, gir1.2-webkit2-4.1
+Filename: pool/main/ggit_0.1.0_all.deb
+Size: 29644
+MD5sum: 36cf36aee05f6b748cccaffe8e3622fa
+SHA1: fe4a4ced106a431a95f5def57cf48045cd1af082
+SHA256: e7f860df6f0352c04755c829560339f9e18e5b20f31116343f20474a071d5912
+Section: vcs
+Priority: optional
+Homepage: https://github.com/rbshah29/ggit
+Description: Modern, friendly git history viewer
+ A fast, easy-to-read git commit graph and history viewer (like gitk)
+ with a native GTK/WebKit2 desktop window and browser fallback.
+
