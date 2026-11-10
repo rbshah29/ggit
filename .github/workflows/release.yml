@@ -1,0 +1,54 @@
+name: Build .deb & Publish APT Repo
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build .deb package
+        run: ./packaging/build-deb.sh
+
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ggit-deb
+          path: dist/*.deb
+
+      - name: Create GitHub Release (on tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.deb
+          generate_release_notes: true
+
+      - name: Update APT repository on gh-pages
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y dpkg-dev
+          mkdir -p apt-repo/pool/main
+          cp dist/*.deb apt-repo/pool/main/
+          cd apt-repo
+          dpkg-scanpackages --multiversion pool/ > Packages
+          gzip -k -f Packages
+          apt-ftparchive release . > Release
+        working-directory: ${{ github.workspace }}
+
+      - name: Deploy APT repo to GitHub Pages branch (gh-pages)
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./apt-repo
+          keep_files: true
