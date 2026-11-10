@@ -13,12 +13,14 @@
 
   <header class="topbar">
     <div class="brand">
-      <svg class="logo" width="22" height="22" viewBox="0 0 22 22" aria-hidden="true">
-        <path class="logo-line" d="M7 3 V19" />
-        <path class="logo-line l2" d="M15 5 C15 11 7 10 7 15" />
-        <circle class="logo-dot d1" cx="7" cy="5" r="2.4" />
-        <circle class="logo-dot d2" cx="15" cy="5" r="2.4" />
-        <circle class="logo-dot d3" cx="7" cy="17" r="2.4" />
+      <svg class="logo" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+        <path class="logo-line l3" d="M9 19 C9 15 4 15 4 11 C4 7 9 7 9 4" />
+        <path class="logo-line l2" d="M9 16 C9 12 19 13 19 8" />
+        <path class="logo-line l1" d="M9 3 V20" />
+        <circle class="logo-dot d1" cx="9" cy="5" r="2.3" />
+        <circle class="logo-dot d2" cx="19" cy="8" r="2.3" />
+        <circle class="logo-dot d4" cx="4" cy="11" r="2.1" />
+        <circle class="logo-dot d3" cx="9" cy="19" r="2.3" />
       </svg>
       <span id="repo-name">ggit</span>
       <svg class="brand-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
@@ -30,7 +32,7 @@
 
     <div class="search">
       <svg class="search-ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-      <input id="search" type="search" placeholder="Search commits" autocomplete="off" spellcheck="false">
+      <input id="search" type="search" placeholder="Search commits, authors, hashes…" autocomplete="off" spellcheck="false">
       <span id="search-count"></span>
       <kbd class="search-kbd">/</kbd>
       <button id="search-prev" class="icon-btn sm" title="Previous match (Shift+Enter)">
@@ -47,6 +49,16 @@
 
     <div class="spacer"></div>
 
+    <button id="branch-map-btn" class="pill-btn active" title="Toggle interactive horizontal Branch Topology view (b)">
+      <svg viewBox="0 0 24 24"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
+      <span>Branch Graph</span>
+    </button>
+
+    <button id="demo-btn" class="pill-btn demo-toggle" title="Simulate a multi-branch repository with animated forks & merges (d)">
+      <span class="pulse-dot"></span>
+      <span id="demo-btn-label">Demo Branches</span>
+    </button>
+
     <button id="refresh" class="icon-btn" title="Reload (r)">
       <svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
     </button>
@@ -61,13 +73,18 @@
 
   <main class="layout">
     <aside class="sidebar" id="sidebar">
-      <input id="ref-filter" type="search" placeholder="Filter refs" autocomplete="off" spellcheck="false">
+      <div class="sidebar-top">
+        <input id="ref-filter" type="search" placeholder="Filter branches & tags…" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="sidebar-hint" id="sidebar-hint">Hover a branch to animate its path</div>
       <div id="ref-groups"></div>
     </aside>
 
     <section class="history">
+      <div id="branch-map" class="branch-map"></div>
+      <div class="bm-resizer" id="bm-resizer" title="Drag to resize Branch Topology height"></div>
       <div class="history-head">
-        <div class="col-graph" id="graph-head"></div>
+        <div class="col-graph" id="graph-head">Graph</div>
         <div class="col-msg">Commit</div>
         <div class="col-author">Author</div>
         <div class="col-date">When</div>
@@ -87,36 +104,90 @@
     </section>
   </main>
 
+  <div id="bm-tooltip" class="bm-tooltip hidden"></div>
+
   <div id="help" class="modal hidden">
     <div class="modal-card">
       <button class="icon-btn close" id="help-close" title="Close">
         <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
       </button>
-      <h2>How to read this view</h2>
+      <h2>How to read the commit & branch graph</h2>
+
+      <div class="help-showcase">
+        <svg viewBox="0 0 560 118" class="help-anim-svg">
+          <defs>
+            <linearGradient id="hg-main" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0" stop-color="#6366f1"/>
+              <stop offset="1" stop-color="#818cf8"/>
+            </linearGradient>
+            <linearGradient id="hg-feat" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0" stop-color="#f59e0b"/>
+              <stop offset="1" stop-color="#fbbf24"/>
+            </linearGradient>
+            <linearGradient id="hg-fix" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0" stop-color="#10b981"/>
+              <stop offset="1" stop-color="#34d399"/>
+            </linearGradient>
+          </defs>
+          <!-- Main branch track -->
+          <path class="ha-track" d="M 40 60 L 510 60" stroke="url(#hg-main)" stroke-width="3" fill="none"/>
+          <path class="ha-flow" d="M 40 60 L 510 60" stroke="#fff" stroke-width="2" fill="none"/>
+
+          <!-- Feature branch fork & merge -->
+          <path class="ha-track" d="M 120 60 C 165 60, 165 24, 210 24 L 330 24 C 375 24, 375 60, 420 60" stroke="url(#hg-feat)" stroke-width="2.8" fill="none"/>
+          <path class="ha-flow feat" d="M 120 60 C 165 60, 165 24, 210 24 L 330 24 C 375 24, 375 60, 420 60" stroke="#fde68a" stroke-width="2" fill="none"/>
+
+          <!-- Hotfix / parallel branch -->
+          <path class="ha-track" d="M 250 60 C 290 60, 290 96, 335 96 L 465 96" stroke="url(#hg-fix)" stroke-width="2.8" fill="none"/>
+          <path class="ha-flow fix" d="M 250 60 C 290 60, 290 96, 335 96 L 465 96" stroke="#a7f3d0" stroke-width="2" fill="none"/>
+
+          <!-- Commit nodes -->
+          <circle cx="55" cy="60" r="5.5" fill="#6366f1"/>
+          <circle cx="120" cy="60" r="5.5" fill="#6366f1"/>
+          <circle cx="210" cy="24" r="5.5" fill="#f59e0b"/>
+          <circle cx="330" cy="24" r="5.5" fill="#f59e0b"/>
+          <circle cx="250" cy="60" r="5.5" fill="#6366f1"/>
+          <circle cx="335" cy="96" r="5.5" fill="#10b981"/>
+          <circle cx="465" cy="96" r="6" fill="#10b981"/>
+          <!-- Merge commit -->
+          <circle cx="420" cy="60" r="6.5" fill="var(--surface)" stroke="#6366f1" stroke-width="3"/>
+          <!-- HEAD commit -->
+          <circle class="g-halo" cx="505" cy="60" r="11" fill="#6366f1"/>
+          <circle cx="505" cy="60" r="6" fill="#6366f1"/>
+
+          <!-- Labels -->
+          <text x="120" y="79" text-anchor="middle" class="ha-label">fork</text>
+          <text x="270" y="14" text-anchor="middle" class="ha-label amber">feature/ui</text>
+          <text x="420" y="43" text-anchor="middle" class="ha-label">merge</text>
+          <text x="505" y="42" text-anchor="middle" class="ha-label main">main (HEAD)</text>
+          <text x="465" y="82" text-anchor="middle" class="ha-label green">release/v2</text>
+        </svg>
+      </div>
+
       <div class="help-grid">
         <div class="help-item">
-          <svg width="40" height="30"><line x1="20" y1="0" x2="20" y2="30" stroke="#6366f1" stroke-width="2"/><circle cx="20" cy="15" r="5" fill="#6366f1"/></svg>
-          <div><b>Commit</b> — a saved snapshot of the project. Each row is one commit, newest at the top.</div>
+          <svg width="40" height="30"><line x1="20" y1="0" x2="20" y2="30" stroke="#6366f1" stroke-width="2.5"/><circle cx="20" cy="15" r="5" fill="#6366f1"/></svg>
+          <div><b>Commit</b> — a saved snapshot of the project. Click any commit dot in the horizontal Branch Topology or the commit list below.</div>
         </div>
         <div class="help-item">
-          <svg width="40" height="30"><line x1="12" y1="0" x2="12" y2="30" stroke="#6366f1" stroke-width="2"/><line x1="28" y1="0" x2="28" y2="30" stroke="#f59e0b" stroke-width="2"/></svg>
-          <div><b>Coloured lines</b> — lines of development. Each line connects a commit to the one it was built on (its <i>parent</i>). Two lines side by side means work happened in parallel.</div>
+          <svg width="40" height="30"><line x1="12" y1="0" x2="12" y2="30" stroke="#6366f1" stroke-width="2.5"/><line x1="28" y1="0" x2="28" y2="30" stroke="#f59e0b" stroke-width="2.5"/></svg>
+          <div><b>Coloured lanes & animated flow</b> — lines of development. Hover any branch in the sidebar or select a commit to watch animated pulses trace that branch's history.</div>
         </div>
         <div class="help-item">
-          <svg width="40" height="30"><path d="M12 0 L12 15" stroke="#6366f1" stroke-width="2"/><path d="M28 0 C28 8 12 8 12 15" stroke="#f59e0b" stroke-width="2" fill="none"/><line x1="12" y1="15" x2="12" y2="30" stroke="#6366f1" stroke-width="2"/><circle cx="12" cy="15" r="5" style="fill:var(--surface)" stroke="#6366f1" stroke-width="2.5"/></svg>
+          <svg width="40" height="30"><path d="M12 0 L12 15" stroke="#6366f1" stroke-width="2.5"/><path d="M28 0 C28 8 12 8 12 15" stroke="#f59e0b" stroke-width="2.5" fill="none"/><line x1="12" y1="15" x2="12" y2="30" stroke="#6366f1" stroke-width="2.5"/><circle cx="12" cy="15" r="5" style="fill:var(--surface)" stroke="#6366f1" stroke-width="2.5"/></svg>
           <div><b>Merge commit</b> (hollow dot) — joins two lines of work back together, e.g. a feature branch merged into main.</div>
         </div>
         <div class="help-item">
           <span class="ref ref-branch ref-current">main</span>
-          <div><b>Branch</b> — a movable name pointing at a commit. The filled one is the branch you're on (<span class="you">HEAD</span>).</div>
+          <div><b>Branch</b> — a movable pointer to a commit, colour-coded to match its lane. The filled badge is the branch you're on (<span class="you">HEAD</span>).</div>
         </div>
         <div class="help-item">
           <span class="ref ref-remote"><i class="ico ico-cloud"></i>origin/main</span>
-          <div><b>Remote branch</b> — where a branch was on the server (e.g. GitHub) the last time you fetched. A cloud on a local branch means it matches its remote copy.</div>
+          <div><b>Remote branch</b> — where a branch was on the server (e.g. GitHub) at your last fetch. A cloud on a local branch means it's in sync with its remote copy.</div>
         </div>
         <div class="help-item">
           <span class="ref ref-tag"><i class="ico ico-tag"></i>v1.0</span>
-          <div><b>Tag</b> — a permanent label, usually marking a release.</div>
+          <div><b>Tag</b> — a permanent label, usually marking a release version.</div>
         </div>
         <div class="help-item">
           <span class="ab"><span class="ahead">↑2</span><span class="behind">↓1</span></span>
@@ -124,18 +195,21 @@
         </div>
         <div class="help-item">
           <svg width="40" height="30"><circle cx="20" cy="15" r="5" fill="none" stroke="#8a8f9a" stroke-width="2" stroke-dasharray="3 2"/></svg>
-          <div><b>Uncommitted changes</b> — edits in your folder that aren't saved into a commit yet.</div>
+          <div><b>Uncommitted changes</b> — edits in your working folder that aren't saved into a commit yet.</div>
         </div>
       </div>
       <h3>Keyboard</h3>
       <div class="keys">
         <span><kbd>↑</kbd><kbd>↓</kbd> or <kbd>k</kbd><kbd>j</kbd> move</span>
         <span><kbd>/</kbd> search</span>
-        <span><kbd>Enter</kbd> / <kbd>Shift+Enter</kbd> next / previous match</span>
+        <span><kbd>Enter</kbd> / <kbd>Shift+Enter</kbd> next / prev match</span>
         <span><kbd>p</kbd> go to parent</span>
         <span><kbd>h</kbd> jump to HEAD</span>
+        <span><kbd>b</kbd> toggle Branch Graph</span>
+        <span><kbd>f</kbd> expand / compact Branch Graph</span>
+        <span><kbd>d</kbd> toggle Demo Branches</span>
         <span><kbd>r</kbd> reload</span>
-        <span><kbd>Esc</kbd> clear search</span>
+        <span><kbd>Esc</kbd> clear search / trace</span>
       </div>
     </div>
   </div>

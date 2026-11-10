@@ -1,16 +1,45 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#7173f0"/>
-      <stop offset="1" stop-color="#4338ca"/>
+      <stop offset="0" stop-color="#1e1b4b"/>
+      <stop offset="0.5" stop-color="#312e81"/>
+      <stop offset="1" stop-color="#0f172a"/>
     </linearGradient>
+    <linearGradient id="mainLine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#818cf8"/>
+      <stop offset="1" stop-color="#6366f1"/>
+    </linearGradient>
+    <linearGradient id="featLine" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fbbf24"/>
+      <stop offset="1" stop-color="#f59e0b"/>
+    </linearGradient>
+    <linearGradient id="relLine" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#34d399"/>
+      <stop offset="1" stop-color="#06b6d4"/>
+    </linearGradient>
+    <filter id="glow" x="-25%" y="-25%" width="150%" height="150%">
+      <feGaussianBlur stdDeviation="3.5" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
   </defs>
   <rect x="8" y="8" width="112" height="112" rx="28" fill="url(#bg)"/>
-  <g fill="none" stroke-linecap="round" stroke-width="8">
-    <path d="M46 30 V98" stroke="#fff"/>
-    <path d="M82 36 C82 66 46 58 46 82" stroke="#fbbf24"/>
+  <rect x="9" y="9" width="110" height="110" rx="27" fill="none" stroke="#ffffff" stroke-opacity="0.14" stroke-width="2"/>
+
+  <g fill="none" stroke-linecap="round" stroke-width="7.5" filter="url(#glow)">
+    <!-- Emerald branch forking left and merging -->
+    <path d="M52 96 C52 78 28 78 28 58 C28 38 52 40 52 26" stroke="url(#relLine)"/>
+    <!-- Amber feature branch forking right and merging to top -->
+    <path d="M52 82 C52 66 92 70 92 46 C92 34 80 28 66 26" stroke="url(#featLine)"/>
+    <!-- Main trunk -->
+    <path d="M52 24 V102" stroke="url(#mainLine)"/>
   </g>
-  <circle cx="46" cy="36" r="11" fill="#fff"/>
-  <circle cx="82" cy="36" r="11" fill="#fbbf24"/>
-  <circle cx="46" cy="92" r="11" fill="#fff"/>
+
+  <!-- Commit nodes -->
+  <circle cx="52" cy="96" r="8.5" fill="#818cf8" stroke="#1e1b4b" stroke-width="3"/>
+  <circle cx="28" cy="58" r="8" fill="#34d399" stroke="#1e1b4b" stroke-width="3"/>
+  <circle cx="52" cy="62" r="7.5" fill="#c7d2fe" stroke="#1e1b4b" stroke-width="3"/>
+  <circle cx="92" cy="46" r="9" fill="#fbbf24" stroke="#1e1b4b" stroke-width="3"/>
+  <!-- Merge commit at HEAD -->
+  <circle cx="52" cy="28" r="10.5" fill="#1e1b4b" stroke="#ffffff" stroke-width="5"/>
+  <circle cx="52" cy="28" r="4" fill="#34d399"/>
 </svg>
