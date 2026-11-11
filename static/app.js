@@ -2,9 +2,11 @@
 
 // ------------------------------------------------------------ constants
 const ROW_H = 32;
-const LANE_W = 16;
-const DOT_R = 4.5;
-const MAX_GRAPH_LANES = 24;
+const LANE_W = 14;          // preferred lane width
+const MIN_LANE_W = 7;       // lanes compress down to this before being clipped
+const GRAPH_MAX_W = 220;    // the graph column never grows past this
+const DOT_R = 4;
+const MAX_ROW_REFS = 2;     // ref pills shown per row before collapsing into "+N"
 const WORKTREE = 'WORKTREE';
 const COLORS = ['#6366f1', '#f59e0b', '#10b981', '#f43f5e', '#06b6d4',
                 '#a855f7', '#84cc16', '#ec4899', '#0ea5e9', '#f97316'];
@@ -35,13 +37,7 @@ const state = {
   children: new Map(),      // hash -> [child hashes]
   branchSets: new Map(),    // ref.full -> Set of commit hashes in that branch's lineage
   activeLineage: new Set(), // commit hashes connected to currently selected commit
-  hoveredRef: null,         // ref.full currently hovered in sidebar or topology
-  showBranchMap: true,
-  bmMode: 'branches',       // 'branches' (multi-branch schematic) | 'timeline' (all commits DAG)
-  bmZoom: 1,
-  bmExpanded: false,
-  demoMode: false,
-  demoData: null,
+  hoveredRef: null,         // ref.full currently hovered in sidebar
   graphLanes: 1,
   selected: null,           // hash
   scope: prefs.scope || 'all',
@@ -114,241 +110,32 @@ const dateFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeSt
 const absTime = (ts) => dateFmt.format(new Date(ts * 1000));
 const short = (h) => h.slice(0, 7);
 
-// ------------------------------------------------------------ multi-branch demo generator
-function buildDemoData() {
-  const now = Math.floor(Date.now() / 1000);
-  const h = (n) => n.toString(16).padStart(8, '0').repeat(5);
-  const raw = [
-    // [id, [parents], author, email, minsAgo, subject, body, files]
-    [24, [23], 'Avery Chen', 'avery@ggit.dev', 12, 'feat(graph): animate flowing branch pulses along active lanes',
-      'Adds SVG dash-offset flow animations and lane-matched branch badges.',
-      [['M', 'static/app.js', 84, 12], ['M', 'static/style.css', 52, 8]]],
-    [23, [20], 'Avery Chen', 'avery@ggit.dev', 38, 'feat(ui): add interactive Branch Topology Map header',
-      'Visualizes active branches, divergence points, and ahead/behind status.',
-      [['M', 'static/index.html', 36, 4], ['M', 'static/app.js', 95, 6]]],
-    [22, [21, 18], 'Ravi Shah', 'rbshah0029@gmail.com', 55, "Merge branch 'feat/glass-ui' into main",
-      'Brings in the redesigned glassmorphic topbar, refined color tokens, and lineage card.',
-      [['M', 'static/style.css', 120, 45], ['M', 'static/index.html', 28, 11]]],
-    [21, [16, 19], 'Ravi Shah', 'rbshah0029@gmail.com', 95, "Merge branch 'fix/virtual-scroll' into main",
-      'Fixes row phase alignment when scrolling rapidly through large commit graphs.',
-      [['M', 'static/app.js', 19, 14]]],
-    [20, [16], 'Avery Chen', 'avery@ggit.dev', 130, 'feat(graph): trace branch ancestry on sidebar hover',
-      'Hovering any branch in the sidebar highlights its commits and dims unrelated lanes.',
-      [['M', 'static/app.js', 64, 9], ['M', 'static/style.css', 24, 2]]],
-    [19, [14], 'Maya Lin', 'maya@ggit.dev', 175, 'fix(scroll): preserve negative animation delay phase on re-render',
-      'Keeps HEAD halo breathing and worktree marching ants smooth during virtual scroll.',
-      [['M', 'static/app.js', 18, 11]]],
-    [18, [17], 'Elena Rostova', 'elena@ggit.dev', 210, 'style(details): add animated commit lineage & merge diagram',
-      'Shows parent -> commit -> child connections with interactive jump nodes.',
-      [['M', 'static/app.js', 72, 3], ['M', 'static/style.css', 48, 0]]],
-    [17, [13], 'Elena Rostova', 'elena@ggit.dev', 260, 'style(theme): refine dark & light surface tokens with ambient glow',
-      'Updates surface contrast and view-transition circular theme ripple.',
-      [['M', 'static/style.css', 86, 42], ['M', 'static/icon.svg', 34, 12]]],
-    [16, [15, 12], 'Ravi Shah', 'rbshah0029@gmail.com', 320, "Merge branch 'release/v0.2' into main",
-      'Sync release packaging updates back into main trunk.',
-      [['M', 'packaging/build-deb.sh', 14, 3], ['M', 'README.md', 22, 6]]],
-    [15, [13], 'Ravi Shah', 'rbshah0029@gmail.com', 400, 'feat(api): add /api/contains endpoint for branch & tag lookup',
-      'Finds all local branches, remote branches, and tags containing a selected commit.',
-      [['M', 'ggit.py', 24, 2], ['M', 'static/app.js', 31, 4]]],
-    [14, [11], 'Maya Lin', 'maya@ggit.dev', 480, 'perf(list): virtualize commit rows for 50k+ commit repositories',
-      'Only renders visible DOM rows plus a 10-row overscan buffer.',
-      [['M', 'static/app.js', 58, 27], ['M', 'static/style.css', 16, 8]]],
-    [13, [11], 'Ravi Shah', 'rbshah0029@gmail.com', 540, 'feat(desktop): remember window size and maximized state in prefs.json',
-      'Persists GTK window geometry and splitter width across sessions.',
-      [['M', 'desktop.py', 34, 8], ['M', 'ggit.py', 28, 5]]],
-    [12, [10], 'Samir Patel', 'samir@ggit.dev', 620, 'chore(release): bump version to 0.2.0-rc1 and update apt workflow',
-      'Prepares Debian package metadata and GitHub Pages APT repository.',
-      [['M', 'packaging/build-deb.sh', 18, 4], ['M', '.github/workflows/release.yml', 26, 5]]],
-    [11, [9, 8], 'Ravi Shah', 'rbshah0029@gmail.com', 740, "Merge branch 'feat/diff-viewer' into main",
-      'Integrates collapsible file diffs, numstat change bars, and rename detection.',
-      [['M', 'ggit.py', 52, 10], ['M', 'static/app.js', 112, 18]]],
-    [10, [9], 'Samir Patel', 'samir@ggit.dev', 820, 'docs(readme): document one-line installer and keyboard shortcuts',
-      'Adds installation options for Debian/Ubuntu and local user installs.',
-      [['M', 'README.md', 48, 12], ['A', 'install.sh', 101, 0]]],
-    [9, [6], 'Ravi Shah', 'rbshah0029@gmail.com', 960, 'feat(worktree): display uncommitted changes as top pseudo-commit',
-      'Shows staged, unstaged, and untracked file counts with plain-English explanation.',
-      [['M', 'ggit.py', 38, 4], ['M', 'static/app.js', 46, 7]]],
-    [8, [7], 'Elena Rostova', 'elena@ggit.dev', 1100, 'feat(diff): auto-collapse large diffs over 4000 lines budget',
-      'Keeps commit switching instant even on huge refactors.',
-      [['M', 'static/app.js', 68, 12], ['M', 'static/style.css', 39, 6]]],
-    [7, [5], 'Elena Rostova', 'elena@ggit.dev', 1280, 'feat(diff): parse unified diffs with line numbers and hunk headers',
-      'Renders side-by-side old/new line numbers and syntax status badges.',
-      [['M', 'ggit.py', 45, 6], ['M', 'static/app.js', 88, 0]]],
-    [6, [5], 'Ravi Shah', 'rbshah0029@gmail.com', 1500, 'feat(search): instant filter across commit subject, author, and SHA',
-      'Dims non-matching rows and supports Enter / Shift+Enter navigation.',
-      [['M', 'static/app.js', 54, 8], ['M', 'static/index.html', 18, 2]]],
-    [5, [4, 3], 'Ravi Shah', 'rbshah0029@gmail.com', 1850, "Merge branch 'feat/gtk-window' into main",
-      'Adds native GTK 3 + WebKit2GTK desktop mode with browser fallback.',
-      [['A', 'desktop.py', 210, 0], ['M', 'ggit.py', 42, 8]]],
-    [4, [2], 'Ravi Shah', 'rbshah0029@gmail.com', 2200, 'feat(graph): assign topological lanes and cubic-bezier merge curves',
-      'Computes lane allocation and SVG path segments for every commit row.',
-      [['M', 'static/app.js', 96, 12], ['M', 'static/style.css', 44, 5]]],
-    [3, [2], 'Maya Lin', 'maya@ggit.dev', 2400, 'feat(desktop): native GTK3 WebKit2 wrapper with repo folder picker',
-      'Supports Ctrl+O repository switching and .desktop launcher installation.',
-      [['A', 'desktop.py', 195, 0]]],
-    [2, [1], 'Ravi Shah', 'rbshah0029@gmail.com', 2900, 'feat(server): local ThreadingHTTPServer with git log & refs endpoints',
-      'Zero external Python dependencies; uses git plumbing commands directly.',
-      [['M', 'ggit.py', 180, 12]]],
-    [1, [], 'Ravi Shah', 'rbshah0029@gmail.com', 3600, 'Initial commit: ggit — a modern, friendly git history viewer',
-      ' bootstrap project structure, static assets, and core git runner.',
-      [['A', 'ggit.py', 120, 0], ['A', 'static/index.html', 90, 0], ['A', 'static/style.css', 160, 0], ['A', ' README.md', 35, 0]]],
-  ];
-
-  const commits = [];
-  const detailsByHash = new Map();
-  for (const [id, parents, author, email, minsAgo, subject, body, filesSpec] of raw) {
-    const hash = h(id);
-    const pHashes = parents.map(h);
-    const time = now - minsAgo * 60;
-    commits.push({ hash, parents: pHashes, author, email, time, subject });
-    const files = filesSpec.map(([status, path, added, deleted]) => ({
-      status, path, added, deleted, binary: false,
-    }));
-    const patch = files.map((f) => [
-      `diff --git a/${f.path} b/${f.path}`,
-      `--- a/${f.path}`,
-      `+++ b/${f.path}`,
-      `@@ -1,5 +1,${Math.max(3, Math.min(12, f.added + 3))} @@`,
-      ` // ${f.path} — ${subject}`,
-      ...(f.deleted ? [`-  const legacyMode = true; // removed in ${short(hash)}`] : []),
-      `+  // Updated by ${author} (${short(hash)})`,
-      `+  const branchFlowAnimated = true;`,
-      `+  renderBranchTopology({ animate: branchFlowAnimated });`,
-      `   return state;`,
-    ].join('\n')).join('\n');
-    detailsByHash.set(hash, {
-      hash, parents: pHashes, author, email, time,
-      committer: author, committerEmail: email, commitTime: time,
-      message: `${subject}\n\n${body}`,
-      files, patch, truncated: false,
-    });
-  }
-
-  const refs = [
-    { name: 'main', full: 'refs/heads/main', kind: 'branch', hash: h(22), upstream: 'origin/main', ahead: 2, behind: 0, gone: false },
-    { name: 'feat/branch-anim', full: 'refs/heads/feat/branch-anim', kind: 'branch', hash: h(24), upstream: 'origin/feat/branch-anim', ahead: 1, behind: 0, gone: false },
-    { name: 'feat/glass-ui', full: 'refs/heads/feat/glass-ui', kind: 'branch', hash: h(18), upstream: 'origin/feat/glass-ui', ahead: 0, behind: 0, gone: false },
-    { name: 'fix/virtual-scroll', full: 'refs/heads/fix/virtual-scroll', kind: 'branch', hash: h(19) },
-    { name: 'release/v0.2', full: 'refs/heads/release/v0.2', kind: 'branch', hash: h(12), upstream: 'origin/release/v0.2', ahead: 0, behind: 0, gone: false },
-    { name: 'origin/main', full: 'refs/remotes/origin/main', kind: 'remote', hash: h(16) },
-    { name: 'origin/feat/branch-anim', full: 'refs/remotes/origin/feat/branch-anim', kind: 'remote', hash: h(23) },
-    { name: 'origin/feat/glass-ui', full: 'refs/remotes/origin/feat/glass-ui', kind: 'remote', hash: h(18) },
-    { name: 'origin/release/v0.2', full: 'refs/remotes/origin/release/v0.2', kind: 'remote', hash: h(12) },
-    { name: 'v0.2.0-rc1', full: 'refs/tags/v0.2.0-rc1', kind: 'tag', hash: h(12) },
-    { name: 'v0.1.5', full: 'refs/tags/v0.1.5', kind: 'tag', hash: h(11) },
-    { name: 'v0.1.0', full: 'refs/tags/v0.1.0', kind: 'tag', hash: h(5) },
-  ];
-
-  const worktree = {
-    status: [
-      { x: 'M', y: ' ', path: 'static/style.css' },
-      { x: ' ', y: 'M', path: 'static/app.js' },
-    ],
-    files: [
-      { status: 'M', path: 'static/style.css', added: 28, deleted: 4, binary: false },
-      { status: 'M', path: 'static/app.js', added: 42, deleted: 6, binary: false },
-    ],
-    patch: [
-      'diff --git a/static/style.css b/static/style.css',
-      '--- a/static/style.css',
-      '+++ b/static/style.css',
-      '@@ -240,3 +240,6 @@',
-      ' .g-line-flow {',
-      '+  stroke-dasharray: 4 10;',
-      '+  animation: laneFlow .9s linear infinite;',
-      ' }',
-      'diff --git a/static/app.js b/static/app.js',
-      '--- a/static/app.js',
-      '+++ b/static/app.js',
-      '@@ -180,3 +180,5 @@',
-      '+// Live uncommitted worktree preview in Multi-Branch Demo mode',
-      '+const demoBranchesReady = true;',
-    ].join('\n'),
-    truncated: false,
-  };
-
-  return {
-    repo: {
-      path: state.repo?.path || '/demo/ggit',
-      name: (state.repo?.name || 'ggit') + ' (demo)',
-      head: h(22),
-      branch: 'main',
-      detached: false,
-      state: null,
-    },
-    refs,
-    commits,
-    detailsByHash,
-    worktree,
-  };
-}
-
-function toggleDemoMode(force) {
-  state.demoMode = typeof force === 'boolean' ? force : !state.demoMode;
-  const btn = $('#demo-btn');
-  const lbl = $('#demo-btn-label');
-  btn.classList.toggle('active', state.demoMode);
-  lbl.textContent = state.demoMode ? 'Exit Demo' : 'Demo Branches';
-  state.selected = null;
-  state.scope = 'all';
-  loadAll();
-  toast(state.demoMode
-    ? 'Multi-Branch Demo active — hover branches or click commits to see branch animations!'
-    : 'Returned to live repository');
-}
-
 // ------------------------------------------------------------ data loading
 async function loadAll({ keepScroll = false } = {}) {
   const list = $('#list');
   const scrollTop = list.scrollTop;
   $('#refresh').classList.add('spin');
   try {
-    if (state.demoMode) {
-      state.demoData = buildDemoData();
-      state.repo = state.demoData.repo;
-      state.refs = state.demoData.refs;
-      buildScopeSelect();
-      let commits = state.demoData.commits.slice();
-      if (state.scope !== 'all') {
-        const targetHash = state.scope === 'head'
-          ? state.repo.head
-          : state.refs.find((r) => r.full === state.scope)?.hash;
-        if (targetHash) {
-          const reachable = computeReachable(targetHash, commits);
-          commits = commits.filter((c) => reachable.has(c.hash));
-        }
-      }
-      if (scopeIncludesHead()) {
+    const [repo, refs] = await Promise.all([api('/api/repo'), api('/api/refs')]);
+    state.repo = repo;
+    state.refs = refs;
+    buildScopeSelect();
+    const log = await api(`/api/log?scope=${encodeURIComponent(state.scope)}&limit=${state.limit}`);
+    let commits = log.commits;
+    state.truncated = log.truncated;
+
+    // Show uncommitted changes as a pseudo-commit on top of HEAD.
+    if (repo.head && scopeIncludesHead()) {
+      const status = await api('/api/status');
+      if (status.length) {
         commits = [{
-          hash: WORKTREE, parents: [state.repo.head], author: 'You', email: '',
+          hash: WORKTREE, parents: [repo.head], author: 'You', email: '',
           time: Date.now() / 1000,
-          subject: 'Uncommitted changes (2 files)',
+          subject: `Uncommitted changes (${status.length} file${status.length === 1 ? '' : 's'})`,
         }, ...commits];
       }
-      state.commits = commits;
-      state.truncated = false;
-    } else {
-      const [repo, refs] = await Promise.all([api('/api/repo'), api('/api/refs')]);
-      state.repo = repo;
-      state.refs = refs;
-      buildScopeSelect();
-      const log = await api(`/api/log?scope=${encodeURIComponent(state.scope)}&limit=${state.limit}`);
-      let commits = log.commits;
-      state.truncated = log.truncated;
-
-      // Show uncommitted changes as a pseudo-commit on top of HEAD.
-      if (repo.head && scopeIncludesHead()) {
-        const status = await api('/api/status');
-        if (status.length) {
-          commits = [{
-            hash: WORKTREE, parents: [repo.head], author: 'You', email: '',
-            time: Date.now() / 1000,
-            subject: `Uncommitted changes (${status.length} file${status.length === 1 ? '' : 's'})`,
-          }, ...commits];
-        }
-      }
-      state.commits = commits;
     }
+    state.commits = commits;
 
     if (!keepScroll) state.introStart = performance.now();
     indexCommits();
@@ -358,7 +145,6 @@ async function loadAll({ keepScroll = false } = {}) {
     updateActiveLineage();
     renderHeader();
     renderSidebar();
-    renderBranchMap();
     applySearch(false);
     renderList(true);
     renderFoot();
@@ -372,28 +158,12 @@ async function loadAll({ keepScroll = false } = {}) {
       else if (state.commits.length) selectCommit(state.commits[0].hash, { scroll: true });
       else $('#details').innerHTML = '<div class="empty">This repository has no commits yet.</div>';
     }
-    if (!state.demoMode) {
-      state.fingerprint = (await api('/api/fingerprint')).fingerprint;
-    }
+    state.fingerprint = (await api('/api/fingerprint')).fingerprint;
   } catch (e) {
     $('#details').innerHTML = `<div class="error">${esc(e.message)}</div>`;
   } finally {
     $('#refresh').classList.remove('spin');
   }
-}
-
-function computeReachable(startHash, commits) {
-  const byHash = new Map(commits.map((c) => [c.hash, c]));
-  const seen = new Set();
-  const stack = [startHash];
-  while (stack.length) {
-    const h = stack.pop();
-    if (!h || seen.has(h)) continue;
-    seen.add(h);
-    const c = byHash.get(h);
-    if (c) for (const p of c.parents) stack.push(p);
-  }
-  return seen;
 }
 
 function scopeIncludesHead() {
@@ -516,505 +286,55 @@ function layoutGraph() {
     c.segs = segs.map(([a, b, x, y, k, th]) => [a, b, x, y, COLORS[k % COLORS.length], th]);
     maxLanes = Math.max(maxLanes, before.length, lanes.length, col + 1);
   }
-  state.graphLanes = Math.min(maxLanes, MAX_GRAPH_LANES);
-  const w = state.graphLanes * LANE_W + 12;
+  // Compress lanes to fit GRAPH_MAX_W; anything beyond that is clipped.
+  state.laneW = Math.max(MIN_LANE_W, Math.min(LANE_W, Math.floor((GRAPH_MAX_W - 12) / maxLanes)));
+  state.graphLanes = Math.min(maxLanes, Math.floor((GRAPH_MAX_W - 12) / state.laneW));
+  const w = state.graphLanes * state.laneW + 12;
   document.documentElement.style.setProperty('--graph-w', `${Math.max(w, 56)}px`);
 }
 
-const laneX = (l) => 6 + l * LANE_W + LANE_W / 2;
+const laneX = (l) => 6 + l * state.laneW + state.laneW / 2;
 
 function graphSvg(c, now, traceSet) {
-  const w = state.graphLanes * LANE_W + 12;
+  const w = state.graphLanes * state.laneW + 12;
+  const r = Math.min(DOT_R, state.laneW * 0.36);
   const wt = c.hash === WORKTREE;
   // Negative delays keep looping animations in phase when rows are re-rendered on scroll.
   const phase = `--t:-${Math.round(now % 2400)}ms`;
   const flowPhase = `--f:-${Math.round(now % 900)}ms`;
   let s = `<svg width="${w}" height="${ROW_H}">`;
   for (const [a, ay, b, by, color, targetHash] of c.segs) {
+    if (a >= state.graphLanes && b >= state.graphLanes) continue;
     const x1 = laneX(a), y1 = ay * ROW_H, x2 = laneX(b), y2 = by * ROW_H;
-    const attrs = wt ? 'stroke-dasharray="3 3"' : 'class="g-line" pathLength="1"';
+    // Lines that merely pass through this row recede so the commit's own lane stands out.
+    const passing = a === b && a !== c.col;
+    const attrs = wt ? 'stroke-dasharray="3 3"' : `class="g-line${passing ? ' pass' : ''}" pathLength="1"`;
     const d = x1 === x2 ? `M${x1} ${y1} L${x2} ${y2}`
       : `M${x1} ${y1} C${x1} ${(y1 + y2) / 2} ${x2} ${(y1 + y2) / 2} ${x2} ${y2}`;
-    s += `<path d="${d}" stroke="${color}" stroke-width="2" fill="none" stroke-linecap="round" ${attrs}/>`;
+    s += `<path d="${d}" stroke="${color}" stroke-width="1.6" fill="none" stroke-linecap="round" ${attrs}/>`;
 
     // Render animated flow particles along traced branch or active commit lineage
     const segActive = !wt && traceSet && (traceSet.has(c.hash) && traceSet.has(targetHash));
     if (segActive && !reduceMotion) {
-      s += `<path class="g-line-flow" d="${d}" stroke="${color}" stroke-width="2.6" fill="none" stroke-linecap="round" style="${flowPhase}"/>`;
+      s += `<path class="g-line-flow" d="${d}" stroke="${color}" stroke-width="2" fill="none" stroke-linecap="round" style="${flowPhase}"/>`;
     }
   }
-  const cx = laneX(c.col), cy = ROW_H / 2;
+  const cx = laneX(Math.min(c.col, state.graphLanes - 1)), cy = ROW_H / 2;
   if (wt) {
-    s += `<circle class="g-ants" cx="${cx}" cy="${cy}" r="${DOT_R}" style="fill:var(--bg);stroke:var(--dim);${phase}" stroke-width="2" stroke-dasharray="3 2"/>`;
+    s += `<circle class="g-ants" cx="${cx}" cy="${cy}" r="${r}" style="fill:var(--bg);stroke:var(--dim);${phase}" stroke-width="2" stroke-dasharray="3 2"/>`;
     return s + '</svg>';
   }
   if (c.hash === state.repo.head) {
-    s += `<circle class="g-halo" cx="${cx}" cy="${cy}" r="${DOT_R + 4}" fill="${c.color}" style="${phase}"/>`;
+    s += `<circle class="g-halo" cx="${cx}" cy="${cy}" r="${r + 3.5}" fill="${c.color}" style="${phase}"/>`;
   }
   const sinceSel = now - state.popAt;
   const pop = c.hash === state.selected && sinceSel < 400 ? ` pop" style="--p:-${Math.round(sinceSel)}ms` : '';
   if (c.parents.length > 1) {
-    s += `<circle class="g-dot${pop}" cx="${cx}" cy="${cy}" r="${DOT_R}" style="fill:var(--bg)" stroke="${c.color}" stroke-width="2.5"/>`;
+    s += `<circle class="g-dot${pop}" cx="${cx}" cy="${cy}" r="${r}" style="fill:var(--bg)" stroke="${c.color}" stroke-width="2.5"/>`;
   } else {
-    s += `<circle class="g-dot${pop}" cx="${cx}" cy="${cy}" r="${DOT_R}" fill="${c.color}" style="stroke:var(--bg)" stroke-width="1.5"/>`;
+    s += `<circle class="g-dot${pop}" cx="${cx}" cy="${cy}" r="${r}" fill="${c.color}" style="stroke:var(--bg)" stroke-width="1.5"/>`;
   }
   return s + '</svg>';
-}
-
-// ------------------------------------------------------------ interactive horizontal branch topology
-function svgPillBadge(x, y, { name, color, hashText, abText, isCurrentBranch, isTag }) {
-  if (isTag) {
-    const text = `🏷 ${name}`;
-    const w = Math.max(48, text.length * 6.2 + 14);
-    return `<rect class="bm-tag-bg" x="${x - w / 2}" y="${y - 10}" width="${w}" height="19" rx="6"/>
-      <text x="${x}" y="${y + 3}" text-anchor="middle" class="bm-tag-lbl">${esc(text)}</text>`;
-  }
-  const label = `${name}${isCurrentBranch ? ' ★' : ''}`;
-  const meta = [hashText, abText].filter(Boolean).join(' · ');
-  const nameW = label.length * 6.6;
-  const metaW = meta ? meta.length * 5.8 + 10 : 0;
-  const totalW = Math.round(nameW + metaW + 22);
-  const pillH = 22;
-  return `<rect class="bm-pill-bg" x="${x}" y="${y - pillH / 2}" width="${totalW}" height="${pillH}" rx="7" stroke="${color}" stroke-opacity="0.45"/>
-    <circle cx="${x + 9}" cy="${y}" r="3.2" fill="${color}"/>
-    <text x="${x + 17}" y="${y + 3.8}" class="bm-label" style="fill:${color}">${esc(label)}</text>
-    ${meta ? `<text x="${x + 19 + nameW}" y="${y + 3.5}" class="bm-meta-lbl">${esc(meta)}</text>` : ''}`;
-}
-
-function buildBranchSchematicSvg() {
-  const realCommits = state.commits.filter((c) => c.hash !== WORKTREE);
-  const branches = state.refs.filter((r) => r.kind === 'branch');
-  const remotes = state.refs.filter((r) => r.kind === 'remote');
-  const tags = state.refs.filter((r) => r.kind === 'tag');
-
-  // Determine primary trunk branch (current branch or first branch or HEAD)
-  const sortedBranches = (branches.length ? branches : remotes).slice()
-    .sort((a, b) => (isCurrent(b) - isCurrent(a)) || a.name.localeCompare(b.name));
-
-  const baseBranch = sortedBranches[0] || {
-    name: state.repo.branch || 'HEAD',
-    full: 'HEAD',
-    kind: 'branch',
-    hash: state.repo.head || realCommits[0]?.hash,
-    color: COLORS[0],
-  };
-
-  // Walk base trunk first-parent chain (newest -> oldest, then reverse to oldest -> newest)
-  const trunkChain = [];
-  const trunkSet = new Set();
-  let curHash = baseBranch.hash || realCommits[0]?.hash;
-  while (curHash && state.index.has(curHash) && trunkChain.length < 40) {
-    trunkChain.push(curHash);
-    trunkSet.add(curHash);
-    const c = state.commits[state.index.get(curHash)];
-    curHash = c?.parents[0];
-  }
-  trunkChain.reverse(); // oldest on left -> newest on right
-
-  // Collect secondary branches: named branches + (if few named branches) historical merged branches
-  const otherBranches = sortedBranches.slice(1, 8).map((b) => ({ ...b }));
-  const representedTips = new Set( sortedBranches.map((b) => b.hash) );
-
-  if (otherBranches.length < 5) {
-    for (const h of trunkChain.slice().reverse()) {
-      const c = state.commits[state.index.get(h)];
-      if (c && c.parents.length > 1) {
-        const secParent = c.parents[1];
-        if (secParent && state.index.has(secParent) && !representedTips.has(secParent)) {
-          const sc = state.commits[state.index.get(secParent)];
-          const m = /Merge branch '([^']+)'/.exec(c.subject);
-          otherBranches.push({
-            name: m ? m[1] : `merged/${short(secParent)}`,
-            full: `merged/${secParent}`,
-            kind: 'branch',
-            hash: secParent,
-            color: sc?.color || COLORS[(otherBranches.length + 1) % COLORS.length],
-            mergedInto: h,
-          });
-          representedTips.add(secParent);
-          if (otherBranches.length >= 6) break;
-        }
-      }
-    }
-  }
-
-  // Assign well-spaced alternating vertical track offsets (48px between tracks on same side)
-  const trackSteps = [-48, 48, -96, 96, -144, 144, -192, 192];
-  const activeOffsets = [0, ...otherBranches.map((_, i) => trackSteps[i] || ((i % 2 ? 1 : -1) * 48 * Math.ceil((i + 1) / 2)))];
-  const minOffset = Math.min(...activeOffsets);
-  const maxOffset = Math.max(...activeOffsets);
-  const padTop = 52;
-  const padBottom = 52;
-  const mainY = padTop - minOffset;
-  const svgH = mainY + maxOffset + padBottom;
-
-  // Map trunk commits to X coordinates
-  const trunkLen = Math.max(1, trunkChain.length);
-  const xStart = 64;
-  const stepX = Math.max(68, Math.min(110, Math.floor(640 / Math.max(4, trunkLen))));
-  const xEnd = xStart + Math.max(420, (trunkLen - 1) * stepX);
-  const svgW = xEnd + 270;
-
-  const trunkX = new Map();
-  trunkChain.forEach((h, idx) => {
-    const x = trunkLen === 1 ? (xStart + xEnd) / 2 : xStart + (idx / (trunkLen - 1)) * (xEnd - xStart);
-    trunkX.set(h, Math.round(x));
-  });
-
-  // Also map which trunk merge commit merges which secondary commit
-  const mergedIntoTrunkAt = new Map();
-  for (const h of trunkChain) {
-    const c = state.commits[state.index.get(h)];
-    if (c && c.parents.length > 1) {
-      for (const p of c.parents.slice(1)) mergedIntoTrunkAt.set(p, h);
-    }
-  }
-
-  const hoveredRef = state.hoveredRef;
-  const baseColor = baseBranch.color || COLORS[0];
-  const baseDimmed = hoveredRef && hoveredRef !== baseBranch.full;
-  const baseHi = hoveredRef && hoveredRef === baseBranch.full;
-
-  let svgPaths = '';
-  let svgNodes = '';
-
-  // 1. Draw main trunk line & animated flow
-  svgPaths += `<path class="bm-track${baseDimmed ? ' dimmed' : ''}${baseHi ? ' hi' : ''}" data-ref="${esc(baseBranch.full)}" d="M ${xStart - 18} ${mainY} L ${xEnd} ${mainY}" stroke="${baseColor}" style="color:${baseColor}"/>`;
-  svgPaths += `<path class="bm-flow${baseDimmed ? ' dimmed' : ''}" d="M ${xStart - 18} ${mainY} L ${xEnd} ${mainY}" stroke="${baseColor}"/>`;
-
-  // Track which trunk commits are fork or merge points
-  const forkPoints = new Map(); // trunkHash -> color
-
-  // 2. Draw each secondary branch track with real fork, branch commits, and merge curve
-  otherBranches.forEach((b, idx) => {
-    const color = b.color || COLORS[(idx + 1) % COLORS.length];
-    const dy = trackSteps[idx] || 48;
-    const y = mainY + dy;
-    const dimmed = hoveredRef && hoveredRef !== b.full;
-    const hi = hoveredRef && hoveredRef === b.full;
-
-    // Walk branch commits back until hitting trunkSet
-    const bChain = [];
-    let cur = b.hash;
-    let forkHash = null;
-    while (cur && state.index.has(cur) && bChain.length < 15) {
-      if (trunkSet.has(cur)) {
-        forkHash = cur;
-        break;
-      }
-      bChain.push(cur);
-      const c = state.commits[state.index.get(cur)];
-      cur = c?.parents[0];
-    }
-    bChain.reverse(); // oldest -> newest on this branch
-
-    const mergeTargetHash = b.mergedInto || mergedIntoTrunkAt.get(b.hash);
-    const mergeX = mergeTargetHash && trunkX.has(mergeTargetHash) ? trunkX.get(mergeTargetHash) : null;
-
-    let forkX = forkHash && trunkX.has(forkHash)
-      ? trunkX.get(forkHash)
-      : Math.max(xStart + 20, (mergeX || xEnd) - 180 - (idx % 3) * 45);
-
-    if (mergeX && forkX >= mergeX - 70) {
-      forkX = Math.max(xStart, mergeX - 150);
-    }
-    if (forkHash) forkPoints.set(forkHash, color);
-
-    const curveSpan = 52;
-    const startBranchX = forkX + curveSpan;
-    const tipX = mergeX
-      ? Math.max(startBranchX + 36, mergeX - curveSpan - 12)
-      : Math.min(xEnd + 18, Math.max(startBranchX + 80, forkX + 155 + (idx % 2) * 35));
-
-    const pathD = mergeX
-      ? `M ${forkX} ${mainY} C ${forkX + curveSpan * 0.65} ${mainY}, ${startBranchX - curveSpan * 0.45} ${y}, ${startBranchX} ${y} L ${tipX} ${y} C ${tipX + curveSpan * 0.5} ${y}, ${mergeX - curveSpan * 0.5} ${mainY}, ${mergeX} ${mainY}`
-      : `M ${forkX} ${mainY} C ${forkX + curveSpan * 0.65} ${mainY}, ${startBranchX - curveSpan * 0.45} ${y}, ${startBranchX} ${y} L ${tipX} ${y}`;
-
-    svgPaths += `<path class="bm-track${dimmed ? ' dimmed' : ''}${hi ? ' hi' : ''}" data-ref="${esc(b.full)}" d="${pathD}" stroke="${color}" style="color:${color}"/>`;
-    svgPaths += `<path class="bm-flow${dimmed ? ' dimmed' : ''}" d="${pathD}" stroke="${color}"/>`;
-
-    // Fork ring on main trunk if not already a trunk node
-    if (!forkHash || !trunkX.has(forkHash)) {
-      svgNodes += `<circle cx="${forkX}" cy="${mainY}" r="4.2" fill="var(--surface)" stroke="${color}" stroke-width="2.2"/>`;
-    }
-
-    // Plot up to 4 commits along this branch track
-    const shownCommits = bChain.length ? bChain.slice(-4) : [b.hash];
-    shownCommits.forEach((ch, cIdx) => {
-      const isTip = cIdx === shownCommits.length - 1;
-      const cx = shownCommits.length === 1
-        ? tipX
-        : Math.round(startBranchX + (cIdx / (shownCommits.length - 1)) * (tipX - startBranchX));
-      const isSel = ch === state.selected;
-      const isCur = isTip && isCurrent(b);
-      svgNodes += `<g class="bm-node-group${dimmed ? ' dimmed' : ''}" data-goto="${ch}" data-ref="${esc(b.full)}" style="color:${color}">
-        ${isCur ? `<circle class="g-halo" cx="${cx}" cy="${y}" r="11" fill="${color}"/>` : ''}
-        ${isSel ? `<circle class="bm-sel-ring" cx="${cx}" cy="${y}" r="9.5" stroke="${color}"/>` : ''}
-        <circle class="bm-node" cx="${cx}" cy="${y}" r="${isTip ? 5.6 : 4.2}" fill="${color}" stroke="var(--surface)" stroke-width="1.8"/>
-      </g>`;
-    });
-
-    // Branch pill badge at tip
-    const abText = b.ahead || b.behind ? `${b.ahead ? `↑${b.ahead}` : ''}${b.behind ? `↓${b.behind}` : ''}` : '';
-    const pillX = mergeX ? Math.round((startBranchX + tipX) / 2 - 48) : tipX + 11;
-    const pillY = mergeX ? y + (dy < 0 ? -17 : 17) : y;
-    svgNodes += `<g class="bm-node-group${dimmed ? ' dimmed' : ''}" data-goto="${b.hash}" data-ref="${esc(b.full)}" style="color:${color}">
-      ${svgPillBadge(pillX, pillY, {
-        name: b.name,
-        color,
-        hashText: short(b.hash),
-        abText,
-        isCurrentBranch: isCurrent(b),
-      })}
-    </g>`;
-  });
-
-  // 3. Draw trunk commit nodes, tags, and main trunk pill badge
-  const tagsByHash = new Map();
-  for (const t of tags) {
-    if (!tagsByHash.has(t.hash)) tagsByHash.set(t.hash, []);
-    tagsByHash.get(t.hash).push(t);
-  }
-
-  // Sample trunk commits if there are many so dots never crowd each other
-  const maxTrunkDots = 12;
-  const stepIdx = Math.max(1, Math.ceil(trunkChain.length / maxTrunkDots));
-  trunkChain.forEach((h, idx) => {
-    const isTip = idx === trunkChain.length - 1;
-    const isRoot = idx === 0;
-    const c = state.commits[state.index.get(h)];
-    const isMerge = c && c.parents.length > 1;
-    const isFork = forkPoints.has(h);
-    const hasTag = tagsByHash.has(h);
-    const isSel = h === state.selected;
-    if (!isTip && !isRoot && !isMerge && !isFork && !hasTag && !isSel && idx % stepIdx !== 0) return;
-
-    const x = trunkX.get(h);
-    const isHead = h === state.repo.head;
-    const ringColor = isFork ? forkPoints.get(h) : baseColor;
-    const hollow = isMerge || isFork;
-
-    svgNodes += `<g class="bm-node-group${baseDimmed ? ' dimmed' : ''}" data-goto="${h}" data-ref="${esc(baseBranch.full)}" style="color:${baseColor}">
-      ${isHead ? `<circle class="g-halo" cx="${x}" cy="${mainY}" r="11.5" fill="${baseColor}"/>` : ''}
-      ${isSel ? `<circle class="bm-sel-ring" cx="${x}" cy="${mainY}" r="10" stroke="${baseColor}"/>` : ''}
-      <circle class="bm-node" cx="${x}" cy="${mainY}" r="${isTip ? 6.2 : hollow ? 5 : 4.2}"
-        fill="${hollow && !isTip ? 'var(--surface)' : baseColor}"
-        stroke="${hollow && !isTip ? ringColor : 'var(--surface)'}"
-        stroke-width="${hollow && !isTip ? 2.4 : 1.6}"/>
-    </g>`;
-
-    if (hasTag) {
-      const t = tagsByHash.get(h)[0];
-      svgNodes += `<g class="bm-tag-group" data-goto="${h}">
-        ${svgPillBadge(x, mainY - 22, { name: t.name, isTag: true })}
-      </g>`;
-    }
-  });
-
-  // Base branch pill at trunk tip (right end)
-  const baseAb = baseBranch.ahead || baseBranch.behind
-    ? `${baseBranch.ahead ? `↑${baseBranch.ahead}` : ''}${baseBranch.behind ? `↓${baseBranch.behind}` : ''}`
-    : '';
-  svgNodes += `<g class="bm-node-group${baseDimmed ? ' dimmed' : ''}" data-goto="${baseBranch.hash}" data-ref="${esc(baseBranch.full)}" style="color:${baseColor}">
-    ${svgPillBadge(xEnd + 12, mainY, {
-      name: baseBranch.name,
-      color: baseColor,
-      hashText: baseBranch.hash ? short(baseBranch.hash) : '',
-      abText: baseAb,
-      isCurrentBranch: isCurrent(baseBranch) || baseBranch.hash === state.repo.head,
-    })}
-  </g>`;
-
-  return { svgW, svgH, svgPaths, svgNodes, multiBranch: otherBranches.length > 0 };
-}
-
-function buildFullTimelineSvg() {
-  // Full Commit-by-Commit Horizontal DAG (oldest on left -> newest on right)
-  const slice = state.commits.slice(0, 45).reverse(); // oldest -> newest
-  const maxLane = Math.max(0, ...slice.map((c) => c.col || 0));
-  const laneStepY = 44;
-  const stepX = 64;
-  const padX = 56;
-  const padY = 52;
-  const svgW = Math.max(680, padX * 2 + Math.max(1, slice.length - 1) * stepX + 190);
-  const svgH = Math.max(140, padY * 2 + maxLane * laneStepY);
-
-  const posByHash = new Map();
-  slice.forEach((c, idx) => {
-    posByHash.set(c.hash, {
-      x: padX + idx * stepX,
-      y: padY + (c.col || 0) * laneStepY,
-      c,
-    });
-  });
-
-  const hoveredSet = state.hoveredRef ? state.branchSets.get(state.hoveredRef) : null;
-  const traceSet = hoveredSet || state.activeLineage;
-  let svgPaths = '';
-  let svgNodes = '';
-
-  // Draw edges from parents to children
-  for (const { x: x2, y: y2, c } of posByHash.values()) {
-    const wt = c.hash === WORKTREE;
-    for (let pi = 0; pi < c.parents.length; pi++) {
-      const pHash = c.parents[pi];
-      const pPos = posByHash.get(pHash);
-      if (!pPos) continue;
-      const { x: x1, y: y1 } = pPos;
-      const edgeColor = pi > 0 ? c.color : (pPos.c.color || c.color);
-      const d = y1 === y2
-        ? `M ${x1} ${y1} L ${x2} ${y2}`
-        : `M ${x1} ${y1} C ${(x1 + x2) / 2} ${y1}, ${(x1 + x2) / 2} ${y2}, ${x2} ${y2}`;
-      const active = !wt && traceSet && traceSet.has(c.hash) && traceSet.has(pHash);
-      const dimmed = hoveredSet && !active;
-      svgPaths += `<path class="bm-track${dimmed ? ' dimmed' : ''}${active && hoveredSet ? ' hi' : ''}" d="${d}" stroke="${edgeColor}" ${wt ? 'stroke-dasharray="4 3"' : ''} style="color:${edgeColor}"/>`;
-      if (active && !reduceMotion) {
-        svgPaths += `<path class="bm-flow" d="${d}" stroke="${edgeColor}"/>`;
-      }
-    }
-  }
-
-  // Draw commit nodes and branch/tag pills
-  for (const { x, y, c } of posByHash.values()) {
-    const wt = c.hash === WORKTREE;
-    const isHead = c.hash === state.repo.head;
-    const isSel = c.hash === state.selected;
-    const isMerge = c.parents.length > 1;
-    const dimmed = hoveredSet && !hoveredSet.has(c.hash);
-    const refs = state.refsByHash.get(c.hash) || [];
-    const primaryRef = refs[0];
-
-    svgNodes += `<g class="bm-node-group${dimmed ? ' dimmed' : ''}" data-goto="${c.hash}" ${primaryRef ? `data-ref="${esc(primaryRef.full)}"` : ''} style="color:${c.color}">
-      ${isHead ? `<circle class="g-halo" cx="${x}" cy="${y}" r="11.5" fill="${c.color}"/>` : ''}
-      ${isSel ? `<circle class="bm-sel-ring" cx="${x}" cy="${y}" r="10" stroke="${c.color}"/>` : ''}
-      <circle class="bm-node" cx="${x}" cy="${y}" r="${isHead || isSel ? 6 : 4.8}"
-        fill="${wt || isMerge ? 'var(--surface)' : c.color}"
-        stroke="${wt ? 'var(--dim)' : isMerge ? c.color : 'var(--surface)'}"
-        stroke-width="${isMerge || wt ? 2.4 : 1.6}"
-        ${wt ? 'stroke-dasharray="3 2"' : ''}/>
-      <text x="${x}" y="${y + 16}" text-anchor="middle" class="bm-commit-lbl">${wt ? 'worktree' : short(c.hash)}</text>
-    </g>`;
-
-    if (primaryRef) {
-      svgNodes += `<g class="bm-node-group${dimmed ? ' dimmed' : ''}" data-goto="${c.hash}" data-ref="${esc(primaryRef.full)}">
-        ${svgPillBadge(x - 28, y - 22, {
-          name: primaryRef.name,
-          color: primaryRef.color || c.color,
-          abText: refs.length > 1 ? `+${refs.length - 1}` : '',
-          isCurrentBranch: isCurrent(primaryRef),
-          isTag: primaryRef.kind === 'tag',
-        })}
-      </g>`;
-    }
-  }
-
-  return { svgW, svgH, svgPaths, svgNodes, multiBranch: maxLane > 0 };
-}
-
-function renderBranchMap({ keepScroll = false } = {}) {
-  const el = $('#branch-map');
-  if (!el) return;
-  el.classList.toggle('collapsed', !state.showBranchMap);
-  el.classList.toggle('expanded', state.bmExpanded);
-  if (!state.commits.length) {
-    el.innerHTML = '';
-    return;
-  }
-
-  const prevWrap = el.querySelector('.bm-canvas-wrap');
-  const prevScrollLeft = prevWrap ? prevWrap.scrollLeft : null;
-  const prevScrollTop = prevWrap ? prevWrap.scrollTop : null;
-
-  const branches = state.refs.filter((r) => r.kind === 'branch');
-  const tags = state.refs.filter((r) => r.kind === 'tag');
-
-  const { svgW, svgH, svgPaths, svgNodes, multiBranch } = state.bmMode === 'timeline'
-    ? buildFullTimelineSvg()
-    : buildBranchSchematicSvg();
-
-  const scaledW = Math.round(svgW * state.bmZoom);
-  const scaledH = Math.round(svgH * state.bmZoom);
-  const zoomPct = Math.round(state.bmZoom * 100);
-
-  const demoAction = !multiBranch && !state.demoMode
-    ? `<button class="btn" id="bm-try-demo" title="Simulate a multi-branch repository with animated forks & merges">✨ Preview Multi-Branch Animation</button>`
-    : '';
-
-  el.innerHTML = `
-    <div class="bm-head">
-      <div class="bm-title">
-        <span>Branch Topology</span>
-        <span class="bm-badge">${branches.length} branch${branches.length === 1 ? '' : 'es'}${tags.length ? ` · ${tags.length} tag${tags.length === 1 ? '' : 's'}` : ''}</span>
-        ${state.demoMode ? '<span class="demo-banner-chip">Demo Mode</span>' : ''}
-      </div>
-      <div class="bm-toolbar">
-        ${demoAction}
-        <div class="bm-seg" title="Switch horizontal graph view">
-          <button data-bm-mode="branches" class="${state.bmMode === 'branches' ? 'on' : ''}">Branches</button>
-          <button data-bm-mode="timeline" class="${state.bmMode === 'timeline' ? 'on' : ''}">All Commits</button>
-        </div>
-        <div class="bm-zoom-bar" title="Zoom & fit horizontal graph (Ctrl + Scroll)">
-          <button class="bm-zbtn" data-bm-zoom="-0.15" title="Zoom out">−</button>
-          <button class="bm-zbtn" data-bm-zoom="reset" title="Reset zoom & center">${zoomPct}%</button>
-          <button class="bm-zbtn" data-bm-zoom="0.15" title="Zoom in">+</button>
-        </div>
-        <button class="bm-zbtn" id="bm-expand" title="Expand / compact Branch Topology view (f)" style="border:1px solid var(--line-strong);border-radius:7px;padding:0 8px;height:24px;background:var(--bg)">
-          ${state.bmExpanded ? '⤡ Compact' : '⤢ Expand'}
-        </button>
-      </div>
-    </div>
-    <div class="bm-canvas-wrap" id="bm-canvas-wrap">
-      <svg class="bm-svg" width="${scaledW}" height="${scaledH}" viewBox="0 0 ${svgW} ${svgH}" preserveAspectRatio="xMidYMid meet">
-        ${svgPaths}
-        ${svgNodes}
-      </svg>
-    </div>`;
-
-  const wrap = $('#bm-canvas-wrap');
-  if (wrap) {
-    if (keepScroll && prevScrollLeft !== null) {
-      wrap.scrollLeft = prevScrollLeft;
-      wrap.scrollTop = prevScrollTop;
-    } else {
-      // Scroll to rightmost end (newest commits / branch tips) on initial render
-      requestAnimationFrame(() => {
-        wrap.scrollLeft = Math.max(0, wrap.scrollWidth - wrap.clientWidth);
-      });
-    }
-  }
-
-  const tryBtn = $('#bm-try-demo');
-  if (tryBtn) tryBtn.onclick = () => toggleDemoMode(true);
-}
-
-function showBmTooltip(hash, clientX, clientY) {
-  const tt = $('#bm-tooltip');
-  if (!tt) return;
-  const i = state.index.get(hash);
-  if (i === undefined) { tt.classList.add('hidden'); return; }
-  const c = state.commits[i];
-  const refs = hash === WORKTREE ? '' : refsHtml(hash);
-  tt.innerHTML = `
-    <div class="tt-top">
-      <span class="hash" style="color:${c.color || 'var(--accent)'};font-weight:700">${hash === WORKTREE ? 'WORKTREE' : short(hash)}</span>
-      ${refs}
-    </div>
-    <div class="tt-subj">${esc(c.subject)}</div>
-    <div class="tt-who">${avatar(c.author, c.email)} <span>${esc(c.author)}</span> · <span>${relTime(c.time)}</span></div>`;
-  tt.classList.remove('hidden');
-  const pad = 14;
-  const rect = tt.getBoundingClientRect();
-  const left = Math.min(window.innerWidth - rect.width - pad, Math.max(pad, clientX + 14));
-  const top = clientY + rect.height + 24 > window.innerHeight
-    ? Math.max(pad, clientY - rect.height - 12)
-    : clientY + 16;
-  tt.style.left = `${left}px`;
-  tt.style.top = `${top}px`;
-}
-
-function hideBmTooltip() {
-  const tt = $('#bm-tooltip');
-  if (tt) tt.classList.add('hidden');
 }
 
 // ------------------------------------------------------------ refs
@@ -1052,20 +372,25 @@ function refPill(r) {
     const tip = cur ? 'The branch you are on (HEAD)' : 'Local branch';
     const sync = r.synced ? ' <i class="ico ico-cloud"></i>' : '';
     const syncTip = r.synced ? ` — same as ${r.upstream}` : '';
-    return `<span class="ref ref-branch${cur ? ' ref-current' : ''}"${style} title="${esc(tip + syncTip)}">${esc(r.name)}${sync}</span>`;
+    return `<span class="ref ref-branch${cur ? ' ref-current' : ''}"${style} title="${esc(tip + syncTip)}"><span class="ref-name">${esc(r.name)}</span>${sync}</span>`;
   }
   if (r.kind === 'remote') {
-    return `<span class="ref ref-remote" title="Remote branch: where '${esc(r.name)}' was on the server at your last fetch"><i class="ico ico-cloud"></i>${esc(r.name)}</span>`;
+    return `<span class="ref ref-remote" title="Remote branch: where '${esc(r.name)}' was on the server at your last fetch"><i class="ico ico-cloud"></i><span class="ref-name">${esc(r.name)}</span></span>`;
   }
-  return `<span class="ref ref-tag" title="Tag"><i class="ico ico-tag"></i>${esc(r.name)}</span>`;
+  return `<span class="ref ref-tag" title="Tag"><i class="ico ico-tag"></i><span class="ref-name">${esc(r.name)}</span></span>`;
 }
 
-function refsHtml(hash) {
+function refsHtml(hash, max = Infinity) {
   let html = '';
   if (state.repo.detached && hash === state.repo.head) {
     html += '<span class="ref ref-head" title="HEAD is detached: you are viewing this exact commit, not a branch">HEAD (detached)</span>';
   }
-  for (const r of state.refsByHash.get(hash) || []) html += refPill(r);
+  const refs = state.refsByHash.get(hash) || [];
+  for (const r of refs.slice(0, max)) html += refPill(r);
+  if (refs.length > max) {
+    const rest = refs.slice(max).map((r) => r.name).join('\n');
+    html += `<span class="ref ref-more" title="${esc(rest)}">+${refs.length - max}</span>`;
+  }
   return html;
 }
 
@@ -1142,9 +467,6 @@ function renderFoot() {
   const n = state.commits.filter((c) => c.hash !== WORKTREE).length;
   const branchCount = state.refs.filter((r) => r.kind === 'branch').length;
   let html = `<span><b>${n.toLocaleString()}</b> commits</span><span>·</span><span><b>${branchCount}</b> local branch${branchCount === 1 ? '' : 'es'}</span>`;
-  if (state.demoMode) {
-    html += `<span>·</span><span class="demo-banner-chip">Multi-Branch Demo Active</span>`;
-  }
   if (state.truncated) {
     html += `<span>— showing the newest ${n.toLocaleString()} only</span><button class="btn" id="load-more">Load more</button>`;
   }
@@ -1187,7 +509,7 @@ function renderList(resize = false) {
     }
     html += `<div class="${cls.join(' ')}" data-i="${i}" style="${styleVars}">` +
       `<div class="graph">${graphSvg(c, now, traceSet)}</div>` +
-      `<div class="msg">${c.hash === WORKTREE ? '' : refsHtml(c.hash)}<span class="subject" title="${esc(c.subject)}">${highlight(c.subject)}</span></div>` +
+      `<div class="msg">${c.hash === WORKTREE ? '' : `<span class="refs">${refsHtml(c.hash, MAX_ROW_REFS)}</span>`}<span class="subject" title="${esc(c.subject)}">${highlight(c.subject)}</span></div>` +
       `<div class="author" title="${esc(c.author)} <${esc(c.email)}>">${avatar(c.author, c.email)}<span>${highlight(c.author)}</span></div>` +
       `<div class="date" title="${absTime(c.time)}">${relTime(c.time)}</div>` +
       '</div>';
@@ -1282,7 +604,6 @@ function selectCommit(hash, { scroll = false } = {}) {
   history.replaceState(null, '', hash === WORKTREE ? '#' : `#${hash}`);
   if (scroll) scrollToRow(i);
   renderList();
-  renderBranchMap({ keepScroll: true });
   loadDetails(state.commits[i]);
 }
 
@@ -1301,19 +622,6 @@ async function loadDetails(c) {
     if (token === state.detailToken) det.innerHTML = '<div class="skeleton"><div></div><div></div><div></div><div></div></div>';
   }, 180);
   try {
-    if (state.demoMode) {
-      if (c.hash === WORKTREE) {
-        const wt = state.demoData.worktree;
-        det.innerHTML = `<div class="view">${renderWorktree(wt)}</div>`;
-        wireDiffs(det, wt.patch, wt.files);
-      } else {
-        const d = state.demoData.detailsByHash.get(c.hash);
-        det.innerHTML = `<div class="view">${renderCommit(d)}</div>`;
-        wireDiffs(det, d.patch, d.files);
-      }
-      det.scrollTop = 0;
-      return;
-    }
     if (c.hash === WORKTREE) {
       const wt = await api('/api/worktree');
       if (token !== state.detailToken) return;
@@ -1344,84 +652,6 @@ function summarize(files) {
   let a = 0, d = 0;
   for (const f of files) { a += f.added; d += f.deleted; }
   return { a, d, n: files.length };
-}
-
-// Animated SVG Commit Lineage & Branch Flow Card inside Details
-function renderLineageCard(d, kids) {
-  const ci = state.index.get(d.hash);
-  const curColor = (ci !== undefined && state.commits[ci]?.color) || 'var(--accent)';
-  const parents = d.parents || [];
-  const w = 480, h = 68, cy = 34, cx = 240;
-
-  let edges = '';
-  let nodes = '';
-
-  // Parents on the left -> flowing into current commit in center
-  if (!parents.length) {
-    edges += `<text x="72" y="${cy + 4}" text-anchor="middle" class="lin-sub">Root commit (initial)</text>`;
-  } else {
-    parents.slice(0, 3).forEach((p, idx) => {
-      const pi = state.index.get(p);
-      const pColor = (pi !== undefined && state.commits[pi]?.color) || COLORS[idx % COLORS.length];
-      const py = parents.length === 1 ? cy : idx === 0 ? cy - 16 : idx === 1 ? cy + 16 : cy;
-      const px = 78;
-      const pathD = `M ${px} ${py} C ${(px + cx) / 2} ${py}, ${(px + cx) / 2} ${cy}, ${cx} ${cy}`;
-      edges += `<path class="lin-edge" d="${pathD}" stroke="${pColor}"/>`;
-      edges += `<path class="lin-flow" d="${pathD}" stroke="${pColor}"/>`;
-      nodes += `<g class="lin-node" data-goto="${p}">
-        <title>Parent: ${short(p)} (click to jump)</title>
-        <circle cx="${px}" cy="${py}" r="5.5" fill="${pColor}" stroke="var(--surface)" stroke-width="1.5"/>
-        <text x="${px - 10}" y="${py + 3.5}" text-anchor="end" class="lin-lbl">${short(p)}</text>
-      </g>`;
-    });
-  }
-
-  // Current commit -> flowing out to children on the right
-  if (!kids.length) {
-    edges += `<text x="${w - 72}" y="${cy + 4}" text-anchor="middle" class="lin-sub">Branch tip</text>`;
-  } else {
-    kids.slice(0, 3).forEach((k, idx) => {
-      const ki = state.index.get(k);
-      const kColor = (ki !== undefined && state.commits[ki]?.color) || curColor;
-      const ky = kids.length === 1 ? cy : idx === 0 ? cy - 16 : idx === 1 ? cy + 16 : cy;
-      const kx = w - 78;
-      const pathD = `M ${cx} ${cy} C ${(cx + kx) / 2} ${cy}, ${(cx + kx) / 2} ${ky}, ${kx} ${ky}`;
-      edges += `<path class="lin-edge" d="${pathD}" stroke="${kColor}"/>`;
-      edges += `<path class="lin-flow" d="${pathD}" stroke="${kColor}"/>`;
-      nodes += `<g class="lin-node" data-goto="${k}">
-        <title>Child: ${short(k)} (click to jump)</title>
-        <circle cx="${kx}" cy="${ky}" r="5.5" fill="${kColor}" stroke="var(--surface)" stroke-width="1.5"/>
-        <text x="${kx + 10}" y="${ky + 3.5}" text-anchor="start" class="lin-lbl">${short(k)}</text>
-      </g>`;
-    });
-  }
-
-  // Center selected commit node
-  const isMerge = parents.length > 1;
-  nodes += `<g>
-    <circle class="g-halo" cx="${cx}" cy="${cy}" r="12" fill="${curColor}"/>
-    <circle cx="${cx}" cy="${cy}" r="7" fill="${isMerge ? 'var(--surface)' : curColor}" stroke="${curColor}" stroke-width="3"/>
-    <text x="${cx}" y="${cy - 13}" text-anchor="middle" class="lin-lbl" style="fill:${curColor}">${short(d.hash)}</text>
-    <text x="${cx}" y="${cy + 22}" text-anchor="middle" class="lin-sub">${isMerge ? 'Merge Commit' : kids.length > 1 ? 'Branch Fork' : 'Selected'}</text>
-  </g>`;
-
-  const flowLabel = isMerge
-    ? `Merges ${parents.length} branches`
-    : kids.length > 1
-      ? `Forks into ${kids.length} branches`
-      : 'Commit lineage flow';
-
-  return `
-    <div class="lineage-card">
-      <div class="lineage-title">
-        <span>Branch & Commit Flow</span>
-        <span>${esc(flowLabel)}</span>
-      </div>
-      <svg class="lineage-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet">
-        ${edges}
-        ${nodes}
-      </svg>
-    </div>`;
 }
 
 function renderCommit(d) {
@@ -1467,7 +697,6 @@ function renderCommit(d) {
         <span id="contains"><span class="link" data-contains="${d.hash}">Show which branches & tags contain this commit</span></span>
       </div>
     </div>
-    ${renderLineageCard(d, kids)}
     <div class="explain">${explain}</div>
     ${d.truncated ? '<div class="warn">This diff is very large; only the first part is shown.</div>' : ''}
     ${renderFileList(d.files)}
@@ -1632,157 +861,16 @@ function wireEvents() {
     const refFull = item ? item.dataset.ref : null;
     if (refFull !== state.hoveredRef) {
       state.hoveredRef = refFull;
-      renderBranchMap({ keepScroll: true });
       queueRender();
     }
   });
   $('#ref-groups').addEventListener('mouseleave', () => {
     if (state.hoveredRef) {
       state.hoveredRef = null;
-      renderBranchMap({ keepScroll: true });
       queueRender();
     }
   });
   $('#ref-filter').addEventListener('input', renderSidebar);
-
-  // Branch Map click, mode switch, zoom, expand, pan & hover tooltip
-  const bmap = $('#branch-map');
-  let bmDidPan = false;
-
-  bmap.addEventListener('click', (e) => {
-    if (bmDidPan) { bmDidPan = false; return; }
-    const modeBtn = e.target.closest('[data-bm-mode]');
-    if (modeBtn) {
-      state.bmMode = modeBtn.dataset.bmMode;
-      renderBranchMap();
-      return;
-    }
-    const zBtn = e.target.closest('[data-bm-zoom]');
-    if (zBtn) {
-      const val = zBtn.dataset.bmZoom;
-      state.bmZoom = val === 'reset' ? 1 : Math.max(0.55, Math.min(2.2, +(state.bmZoom + parseFloat(val)).toFixed(2)));
-      renderBranchMap({ keepScroll: val !== 'reset' });
-      return;
-    }
-    if (e.target.closest('#bm-expand')) {
-      state.bmExpanded = !state.bmExpanded;
-      renderBranchMap({ keepScroll: true });
-      setTimeout(queueRender, 300);
-      return;
-    }
-    const g = e.target.closest('[data-goto]');
-    if (g && state.index.has(g.dataset.goto)) {
-      selectCommit(g.dataset.goto, { scroll: true });
-    }
-  });
-
-  bmap.addEventListener('mousemove', (e) => {
-    const node = e.target.closest('[data-goto]');
-    if (node && state.index.has(node.dataset.goto)) {
-      showBmTooltip(node.dataset.goto, e.clientX, e.clientY);
-    } else {
-      hideBmTooltip();
-    }
-    const refEl = e.target.closest('[data-ref]');
-    const refFull = refEl ? refEl.dataset.ref : null;
-    if (refFull !== state.hoveredRef) {
-      state.hoveredRef = refFull;
-      bmap.querySelectorAll('.bm-track').forEach((p) => {
-        const pr = p.dataset.ref;
-        p.classList.toggle('dimmed', Boolean(refFull && pr && pr !== refFull));
-        p.classList.toggle('hi', Boolean(refFull && pr && pr === refFull));
-      });
-      queueRender();
-    }
-  });
-
-  bmap.addEventListener('mouseleave', () => {
-    hideBmTooltip();
-    if (state.hoveredRef) {
-      state.hoveredRef = null;
-      renderBranchMap({ keepScroll: true });
-      queueRender();
-    }
-  });
-
-  // Mouse wheel zoom (Ctrl+Wheel) & horizontal scroll inside Branch Topology
-  bmap.addEventListener('wheel', (e) => {
-    const wrap = $('#bm-canvas-wrap');
-    if (!wrap) return;
-    if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-      const delta = e.deltaY < 0 ? 0.12 : -0.12;
-      state.bmZoom = Math.max(0.55, Math.min(2.2, +(state.bmZoom + delta).toFixed(2)));
-      renderBranchMap({ keepScroll: true });
-    } else if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && wrap.scrollWidth > wrap.clientWidth) {
-      e.preventDefault();
-      wrap.scrollLeft += e.deltaY;
-    }
-  }, { passive: false });
-
-  // Click-and-drag panning inside Branch Topology canvas
-  bmap.addEventListener('mousedown', (e) => {
-    const wrap = e.target.closest('.bm-canvas-wrap');
-    if (!wrap || e.button !== 0) return;
-    const startX = e.clientX, startY = e.clientY;
-    const sl = wrap.scrollLeft, st = wrap.scrollTop;
-    bmDidPan = false;
-    const move = (ev) => {
-      const dx = ev.clientX - startX, dy = ev.clientY - startY;
-      if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
-        bmDidPan = true;
-        wrap.classList.add('panning');
-        hideBmTooltip();
-      }
-      if (bmDidPan) {
-        wrap.scrollLeft = sl - dx;
-        wrap.scrollTop = st - dy;
-      }
-    };
-    const up = () => {
-      wrap.classList.remove('panning');
-      window.removeEventListener('mousemove', move);
-      window.removeEventListener('mouseup', up);
-    };
-    window.addEventListener('mousemove', move);
-    window.addEventListener('mouseup', up);
-  });
-
-  // Vertical drag resizer for Branch Topology panel height
-  const bmResizer = $('#bm-resizer');
-  if (bmResizer) {
-    bmResizer.addEventListener('mousedown', (e) => {
-      e.preventDefault();
-      bmResizer.classList.add('drag');
-      bmap.classList.add('dragging');
-      state.bmExpanded = false;
-      bmap.classList.remove('expanded');
-      const startY = e.clientY;
-      const startH = bmap.getBoundingClientRect().height;
-      const move = (ev) => {
-        const h = Math.max(150, Math.min(window.innerHeight * 0.75, startH + (ev.clientY - startY)));
-        bmap.style.setProperty('--bm-h', `${Math.round(h)}px`);
-        queueRender();
-      };
-      const up = () => {
-        bmResizer.classList.remove('drag');
-        bmap.classList.remove('dragging');
-        window.removeEventListener('mousemove', move);
-        window.removeEventListener('mouseup', up);
-      };
-      window.addEventListener('mousemove', move);
-      window.addEventListener('mouseup', up);
-    });
-  }
-
-  $('#branch-map-btn').onclick = () => {
-    state.showBranchMap = !state.showBranchMap;
-    $('#branch-map-btn').classList.toggle('active', state.showBranchMap);
-    $('#branch-map').classList.toggle('collapsed', !state.showBranchMap);
-    setTimeout(queueRender, 320);
-  };
-
-  $('#demo-btn').onclick = () => toggleDemoMode();
 
   $('#scope').addEventListener('change', (e) => {
     state.scope = e.target.value;
@@ -1886,13 +974,6 @@ function wireEvents() {
       const c = state.commits[state.index.get(state.selected)];
       if (c && c.parents[0]) selectCommit(c.parents[0], { scroll: true });
     } else if (k === 'h' && state.repo.head) selectCommit(state.repo.head, { scroll: true });
-    else if (k === 'b') $('#branch-map-btn').click();
-    else if (k === 'f') {
-      state.bmExpanded = !state.bmExpanded;
-      renderBranchMap({ keepScroll: true });
-      setTimeout(queueRender, 300);
-    }
-    else if (k === 'd') toggleDemoMode();
     else if (k === 'r') loadAll({ keepScroll: true });
     else if (k === '?') $('#help').classList.remove('hidden');
   });
@@ -1922,7 +1003,6 @@ function wireEvents() {
 
   // Auto-refresh when you come back to the tab and something changed.
   const check = async () => {
-    if (state.demoMode) return;
     try {
       const { fingerprint } = await api('/api/fingerprint');
       if (state.fingerprint && fingerprint !== state.fingerprint) {
@@ -1947,20 +1027,6 @@ async function showContains(hash) {
   const el = $('#contains');
   el.textContent = 'Looking…';
   try {
-    if (state.demoMode) {
-      const branches = state.refs.filter((r) => r.kind === 'branch' && state.branchSets.get(r.full)?.has(hash)).map((r) => r.name);
-      const remotes = state.refs.filter((r) => r.kind === 'remote' && state.branchSets.get(r.full)?.has(hash)).map((r) => r.name);
-      const tags = state.refs.filter((r) => r.kind === 'tag' && state.branchSets.get(r.full)?.has(hash)).map((r) => r.name);
-      const pills = [
-        ...branches.map((n) => refPill({ kind: 'branch', name: n })),
-        ...remotes.map((n) => refPill({ kind: 'remote', name: n })),
-        ...tags.map((n) => refPill({ kind: 'tag', name: n })),
-      ];
-      el.innerHTML = pills.length
-        ? `<div class="contains">${pills.join('')}</div>`
-        : '<span style="color:var(--faint)">Reachable via merge commit on main.</span>';
-      return;
-    }
     const r = await api(`/api/contains/${hash}`);
     const pills = [
       ...r.branches.map((n) => refPill({ kind: 'branch', name: n })),

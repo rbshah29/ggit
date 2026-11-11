@@ -3,10 +3,7 @@
 A modern, friendly git history viewer — like `gitk`, but easier to read.
 
 - **Commit graph** with coloured lanes, smooth curves, animated branch-flow pulses, hollow dots for merges and a halo on HEAD
-- **Interactive Branch Topology Map** (`b`) showing active branches, divergence points, ahead/behind status, and animated branch flow
-- **Branch path tracing**: hover any branch in the sidebar or topology map to highlight its commits and animate its lane path
-- **Commit Lineage & Merge Diagram**: animated parent → commit → child flow card in the commit details panel
-- **Built-in Multi-Branch Demo** (`d`): preview a rich multi-branch repository with parallel lanes, forks, and merges anytime
+- **Branch path tracing**: hover any branch in the sidebar to highlight its commits and animate its lane path
 - **Plain-English explanations**: what a merge commit is, what changed, staged vs. not staged
 - **Branch sidebar** with colour-matched lane dots and ahead/behind counts (↑ not pushed, ↓ not pulled); click to jump
 - **Uncommitted changes** shown as a dashed row on top of the graph
@@ -73,7 +70,5 @@ Theme, panel width, window size and last repo are saved in `~/.config/ggit/prefs
 | `/` | search; `Enter` / `Shift+Enter` next / previous match |
 | `p` | go to parent |
 | `h` | jump to HEAD |
-| `b` | toggle animated Branch Topology Map |
-| `d` | toggle Multi-Branch Demo mode |
 | `r` | reload |
 | `?` | help: how to read the graph |
