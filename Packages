@@ -2,14 +2,14 @@ Package: ggit
 Version: 0.1.0
 Architecture: all
 Maintainer: rbshah29 <rbshah0029@gmail.com>
-Installed-Size: 228
+Installed-Size: 180
 Depends: python3 (>= 3.8), git
 Recommends: python3-gi, gir1.2-gtk-3.0, gir1.2-webkit2-4.1
 Filename: pool/main/ggit_0.1.0_all.deb
-Size: 43758
-MD5sum: 9c33705c34660250171b2c13020f7ce4
-SHA1: 9df4a38c2d37a24b75bbca86d202bc099fedd607
-SHA256: c7911d4f197448086d2e2f1d253cbd82cb63c89b9684d0fe82a5bb72bd36c558
+Size: 32674
+MD5sum: 907214bf7ce568d1339653d835e4e867
+SHA1: 47a156c3e7a746f9ca08cdd07d0d9fb087ad1501
+SHA256: 9db079085cd4a2be525fc3c3730b127cc05f9c076fa191535cf03eb539c9882a
 Section: vcs
 Priority: optional
 Homepage: https://github.com/rbshah29/ggit
