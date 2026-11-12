@@ -6,10 +6,10 @@ Installed-Size: 180
 Depends: python3 (>= 3.8), git
 Recommends: python3-gi, gir1.2-gtk-3.0, gir1.2-webkit2-4.1
 Filename: pool/main/ggit_0.1.0_all.deb
-Size: 32674
-MD5sum: 907214bf7ce568d1339653d835e4e867
-SHA1: 47a156c3e7a746f9ca08cdd07d0d9fb087ad1501
-SHA256: 9db079085cd4a2be525fc3c3730b127cc05f9c076fa191535cf03eb539c9882a
+Size: 33426
+MD5sum: 9e0367322a9fa6a02cb09db7b02e9b24
+SHA1: 99fed0e7fceeab33972d6917ce0f1c96a74e4ae2
+SHA256: 8d4a47e2300a43ce8b2c42f3dbecbd1afc52977db1d447bb2c786133bf6da6b5
 Section: vcs
 Priority: optional
 Homepage: https://github.com/rbshah29/ggit
