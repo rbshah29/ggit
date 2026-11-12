@@ -8,8 +8,15 @@ const GRAPH_MAX_W = 220;    // the graph column never grows past this
 const DOT_R = 4;
 const MAX_ROW_REFS = 2;     // ref pills shown per row before collapsing into "+N"
 const WORKTREE = 'WORKTREE';
-const COLORS = ['#6366f1', '#f59e0b', '#10b981', '#f43f5e', '#06b6d4',
-                '#a855f7', '#84cc16', '#ec4899', '#0ea5e9', '#f97316'];
+// Graph lane colours, tuned to each theme's palette (lane 0 is usually the main line).
+const LANE_COLORS = {
+  light: ['#9d8189', '#e0899a', '#5f8f89', '#6b84a8', '#c48a5a', '#8c7ab0', '#b9a15a', '#b06aa0', '#5a8fb0', '#a8747a'],
+  dark: ['#8ab0ab', '#f4acb7', '#9fb3c8', '#d8b48a', '#b5a3d6', '#e8a07a', '#d9c27a', '#cc9fc0', '#8fc1d6', '#c9b1a8'],
+};
+let COLORS = LANE_COLORS.light;
+const syncLaneColors = () => {
+  COLORS = LANE_COLORS[document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'];
+};
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // Settings live in ~/.config/ggit/prefs.json (the server inlines them into the page).
@@ -106,8 +113,23 @@ function relTime(ts) {
   return 'just now';
 }
 
+// Compact relative time for the commit list: "now", "5m", "17h", "2d", "3w", "4mo", "1y".
+function relShort(ts) {
+  const s = Date.now() / 1000 - ts;
+  const units = [['y', 31536000], ['mo', 2592000], ['w', 604800], ['d', 86400], ['h', 3600], ['m', 60]];
+  for (const [u, n] of units) if (s >= n) return `${Math.floor(s / n)}${u}`;
+  return 'now';
+}
+
 const dateFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 const absTime = (ts) => dateFmt.format(new Date(ts * 1000));
+// Compact date for the list: time for this year's commits, year for older ones.
+const shortFmtThisYear = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+const shortFmtOlder = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+function shortDate(ts) {
+  const d = new Date(ts * 1000);
+  return (d.getFullYear() === new Date().getFullYear() ? shortFmtThisYear : shortFmtOlder).format(d);
+}
 const short = (h) => h.slice(0, 7);
 
 // ------------------------------------------------------------ data loading
@@ -511,7 +533,7 @@ function renderList(resize = false) {
       `<div class="graph">${graphSvg(c, now, traceSet)}</div>` +
       `<div class="msg">${c.hash === WORKTREE ? '' : `<span class="refs">${refsHtml(c.hash, MAX_ROW_REFS)}</span>`}<span class="subject" title="${esc(c.subject)}">${highlight(c.subject)}</span></div>` +
       `<div class="author" title="${esc(c.author)} <${esc(c.email)}>">${avatar(c.author, c.email)}<span>${highlight(c.author)}</span></div>` +
-      `<div class="date" title="${absTime(c.time)}">${relTime(c.time)}</div>` +
+      `<div class="date" title="${absTime(c.time)} (${relTime(c.time)})"><span class="rel">${relShort(c.time)}</span><span class="abs">${shortDate(c.time)}</span></div>` +
       '</div>';
   }
   rows.innerHTML = html;
@@ -901,7 +923,18 @@ function wireEvents() {
   $('#theme').onclick = () => {
     const root = document.documentElement;
     const next = root.dataset.theme === 'dark' ? 'light' : 'dark';
-    const apply = () => { root.dataset.theme = next; setPref('theme', next); };
+    const apply = () => {
+      root.dataset.theme = next;
+      setPref('theme', next);
+      // Recolour the graph lanes for the new theme.
+      syncLaneColors();
+      layoutGraph();
+      computeBranchSets();
+      renderSidebar();
+      renderList();
+      const sel = state.commits[state.index.get(state.selected)];
+      if (sel) $('#details').style.setProperty('--commit-c', sel.color);
+    };
     if (!document.startViewTransition || reduceMotion) return apply();
     // Ripple the new theme outward from the button.
     const b = $('#theme').getBoundingClientRect();
@@ -1046,6 +1079,7 @@ async function showContains(hash) {
   const theme = prefs.theme ||
     (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
   document.documentElement.dataset.theme = theme;
+  syncLaneColors();
   const fromUrl = location.hash.slice(1);
   if (/^[0-9a-f]{40,64}$/i.test(fromUrl)) state.selected = fromUrl;
   wireEvents();

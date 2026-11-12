@@ -103,16 +103,16 @@
         <svg viewBox="0 0 560 118" class="help-anim-svg">
           <defs>
             <linearGradient id="hg-main" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0" stop-color="#6366f1"/>
-              <stop offset="1" stop-color="#818cf8"/>
+              <stop offset="0" stop-color="#9d8189"/>
+              <stop offset="1" stop-color="#b59aa2"/>
             </linearGradient>
             <linearGradient id="hg-feat" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0" stop-color="#f59e0b"/>
-              <stop offset="1" stop-color="#fbbf24"/>
+              <stop offset="0" stop-color="#e0899a"/>
+              <stop offset="1" stop-color="#f4acb7"/>
             </linearGradient>
             <linearGradient id="hg-fix" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0" stop-color="#10b981"/>
-              <stop offset="1" stop-color="#34d399"/>
+              <stop offset="0" stop-color="#5f8f89"/>
+              <stop offset="1" stop-color="#8ab0ab"/>
             </linearGradient>
           </defs>
           <!-- Main branch track -->
@@ -121,25 +121,25 @@
 
           <!-- Feature branch fork & merge -->
           <path class="ha-track" d="M 120 60 C 165 60, 165 24, 210 24 L 330 24 C 375 24, 375 60, 420 60" stroke="url(#hg-feat)" stroke-width="2.8" fill="none"/>
-          <path class="ha-flow feat" d="M 120 60 C 165 60, 165 24, 210 24 L 330 24 C 375 24, 375 60, 420 60" stroke="#fde68a" stroke-width="2" fill="none"/>
+          <path class="ha-flow feat" d="M 120 60 C 165 60, 165 24, 210 24 L 330 24 C 375 24, 375 60, 420 60" stroke="#ffcad4" stroke-width="2" fill="none"/>
 
           <!-- Hotfix / parallel branch -->
           <path class="ha-track" d="M 250 60 C 290 60, 290 96, 335 96 L 465 96" stroke="url(#hg-fix)" stroke-width="2.8" fill="none"/>
-          <path class="ha-flow fix" d="M 250 60 C 290 60, 290 96, 335 96 L 465 96" stroke="#a7f3d0" stroke-width="2" fill="none"/>
+          <path class="ha-flow fix" d="M 250 60 C 290 60, 290 96, 335 96 L 465 96" stroke="#c9dcd9" stroke-width="2" fill="none"/>
 
           <!-- Commit nodes -->
-          <circle cx="55" cy="60" r="5.5" fill="#6366f1"/>
-          <circle cx="120" cy="60" r="5.5" fill="#6366f1"/>
-          <circle cx="210" cy="24" r="5.5" fill="#f59e0b"/>
-          <circle cx="330" cy="24" r="5.5" fill="#f59e0b"/>
-          <circle cx="250" cy="60" r="5.5" fill="#6366f1"/>
-          <circle cx="335" cy="96" r="5.5" fill="#10b981"/>
-          <circle cx="465" cy="96" r="6" fill="#10b981"/>
+          <circle cx="55" cy="60" r="5.5" fill="#9d8189"/>
+          <circle cx="120" cy="60" r="5.5" fill="#9d8189"/>
+          <circle cx="210" cy="24" r="5.5" fill="#e0899a"/>
+          <circle cx="330" cy="24" r="5.5" fill="#e0899a"/>
+          <circle cx="250" cy="60" r="5.5" fill="#9d8189"/>
+          <circle cx="335" cy="96" r="5.5" fill="#5f8f89"/>
+          <circle cx="465" cy="96" r="6" fill="#5f8f89"/>
           <!-- Merge commit -->
-          <circle cx="420" cy="60" r="6.5" fill="var(--surface)" stroke="#6366f1" stroke-width="3"/>
+          <circle cx="420" cy="60" r="6.5" fill="var(--surface)" stroke="#9d8189" stroke-width="3"/>
           <!-- HEAD commit -->
-          <circle class="g-halo" cx="505" cy="60" r="11" fill="#6366f1"/>
-          <circle cx="505" cy="60" r="6" fill="#6366f1"/>
+          <circle class="g-halo" cx="505" cy="60" r="11" fill="#9d8189"/>
+          <circle cx="505" cy="60" r="6" fill="#9d8189"/>
 
           <!-- Labels -->
           <text x="120" y="79" text-anchor="middle" class="ha-label">fork</text>
@@ -152,15 +152,15 @@
 
       <div class="help-grid">
         <div class="help-item">
-          <svg width="40" height="30"><line x1="20" y1="0" x2="20" y2="30" stroke="#6366f1" stroke-width="2.5"/><circle cx="20" cy="15" r="5" fill="#6366f1"/></svg>
+          <svg width="40" height="30"><line x1="20" y1="0" x2="20" y2="30" stroke="#9d8189" stroke-width="2.5"/><circle cx="20" cy="15" r="5" fill="#9d8189"/></svg>
           <div><b>Commit</b> — a saved snapshot of the project. Click any commit in the list to see what changed.</div>
         </div>
         <div class="help-item">
-          <svg width="40" height="30"><line x1="12" y1="0" x2="12" y2="30" stroke="#6366f1" stroke-width="2.5"/><line x1="28" y1="0" x2="28" y2="30" stroke="#f59e0b" stroke-width="2.5"/></svg>
+          <svg width="40" height="30"><line x1="12" y1="0" x2="12" y2="30" stroke="#9d8189" stroke-width="2.5"/><line x1="28" y1="0" x2="28" y2="30" stroke="#e0899a" stroke-width="2.5"/></svg>
           <div><b>Coloured lanes & animated flow</b> — lines of development. Hover any branch in the sidebar or select a commit to watch animated pulses trace that branch's history.</div>
         </div>
         <div class="help-item">
-          <svg width="40" height="30"><path d="M12 0 L12 15" stroke="#6366f1" stroke-width="2.5"/><path d="M28 0 C28 8 12 8 12 15" stroke="#f59e0b" stroke-width="2.5" fill="none"/><line x1="12" y1="15" x2="12" y2="30" stroke="#6366f1" stroke-width="2.5"/><circle cx="12" cy="15" r="5" style="fill:var(--surface)" stroke="#6366f1" stroke-width="2.5"/></svg>
+          <svg width="40" height="30"><path d="M12 0 L12 15" stroke="#9d8189" stroke-width="2.5"/><path d="M28 0 C28 8 12 8 12 15" stroke="#e0899a" stroke-width="2.5" fill="none"/><line x1="12" y1="15" x2="12" y2="30" stroke="#9d8189" stroke-width="2.5"/><circle cx="12" cy="15" r="5" style="fill:var(--surface)" stroke="#9d8189" stroke-width="2.5"/></svg>
           <div><b>Merge commit</b> (hollow dot) — joins two lines of work back together, e.g. a feature branch merged into main.</div>
         </div>
         <div class="help-item">
