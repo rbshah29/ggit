@@ -61,7 +61,7 @@ trap cleanup EXIT
 if [ -z "$SCRIPT_DIR" ]; then
     echo "Downloading ggit from $REPO_URL..."
     TMP_DIR="$(mktemp -d)"
-    git clone --depth 1 "$REPO_URL" "$TMP_DIR/ggit"
+    git clone --quiet "$REPO_URL" "$TMP_DIR/ggit"
     SCRIPT_DIR="$TMP_DIR/ggit"
 fi
 
@@ -76,11 +76,10 @@ fi
 if [ "$MODE" = "deb" ]; then
     echo "Building .deb package..."
     bash "$SCRIPT_DIR/packaging/build-deb.sh"
-    VERSION="$(python3 -c 'import sys; sys.path.insert(0, "'"$SCRIPT_DIR"'"); import ggit; print(ggit.VERSION)')"
-    DEB_FILE="$SCRIPT_DIR/dist/ggit_${VERSION}_all.deb"
+    DEB_FILE="$(cat "$SCRIPT_DIR/dist/LATEST")"
     echo "Installing $DEB_FILE via apt..."
     sudo apt-get update -qq || true
-    sudo apt-get install -y "$DEB_FILE"
+    sudo apt-get install -y --allow-downgrades "$DEB_FILE"
     echo ""
     echo "ggit installed! Run 'ggit' inside any git repository."
 else

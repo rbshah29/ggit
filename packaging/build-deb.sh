@@ -2,7 +2,16 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VERSION="$(python3 -c 'import sys; sys.path.insert(0, "'"$ROOT_DIR"'"); import ggit; print(ggit.VERSION)')"
+BASE_VERSION="$(python3 -c 'import sys; sys.path.insert(0, "'"$ROOT_DIR"'"); import ggit; print(ggit.VERSION)')"
+# Every build needs a higher version than the last, or apt won't upgrade.
+# Append the commit count (needs full git history): 0.1.0 -> 0.1.0+git42.
+if [ -n "${GGIT_VERSION:-}" ]; then
+    VERSION="$GGIT_VERSION"
+elif COUNT="$(git -C "$ROOT_DIR" rev-list --count HEAD 2>/dev/null)"; then
+    VERSION="${BASE_VERSION}+git${COUNT}"
+else
+    VERSION="$BASE_VERSION"
+fi
 PKG_NAME="ggit"
 ARCH="all"
 BUILD_ROOT="$ROOT_DIR/build/${PKG_NAME}_${VERSION}_${ARCH}"
@@ -20,6 +29,8 @@ mkdir -p \
 
 # Copy application files
 install -m 0755 "$ROOT_DIR/ggit.py" "$BUILD_ROOT/usr/lib/ggit/ggit.py"
+# Stamp the full package version so `ggit --version` matches apt.
+sed -i "s/^VERSION = \".*\"$/VERSION = \"$VERSION\"/" "$BUILD_ROOT/usr/lib/ggit/ggit.py"
 install -m 0644 "$ROOT_DIR/desktop.py" "$BUILD_ROOT/usr/lib/ggit/desktop.py"
 install -m 0644 "$ROOT_DIR/static/app.js" "$BUILD_ROOT/usr/lib/ggit/static/app.js"
 install -m 0644 "$ROOT_DIR/static/icon.svg" "$BUILD_ROOT/usr/lib/ggit/static/icon.svg"
@@ -69,4 +80,5 @@ EOF
 chmod 0644 "$BUILD_ROOT/DEBIAN/control"
 
 dpkg-deb --root-owner-group --build "$BUILD_ROOT" "$DEB_FILE" >/dev/null
+echo "$DEB_FILE" > "$DIST_DIR/LATEST"
 echo "Built Debian package: $DEB_FILE"

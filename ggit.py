@@ -5,6 +5,7 @@ Usage:
     ggit [PATH]                 open a desktop window for the repo
     ggit --browser [PATH]       view it in your web browser instead
     ggit --install              add ggit to your applications menu
+    ggit --update               update ggit to the latest version
 
 A small local server (bound to 127.0.0.1 only) feeds the UI. Needs Python 3.8+
 and git; the desktop window also uses GTK 3 + WebKit2GTK (python3-gi).
@@ -27,6 +28,7 @@ VERSION = "0.1.0"
 HASH_RE = re.compile(r"^[0-9a-fA-F]{4,64}$")
 MAX_DIFF_BYTES = 3_000_000
 DEFAULT_LIMIT = 5000
+INSTALLER_URL = "https://raw.githubusercontent.com/rbshah29/ggit/main/install.sh"
 
 
 class GitError(Exception):
@@ -439,6 +441,41 @@ def run_browser(ctx, args):
         print("\nggit: bye")
 
 
+def self_update():
+    """Update ggit in place, using apt for the .deb install or the installer otherwise."""
+    here = os.path.realpath(__file__)
+    print("ggit: current version " + VERSION)
+    if here.startswith("/usr/lib/ggit/"):
+        sources = "/etc/apt/sources.list.d/ggit.list"
+        if os.path.exists(sources):
+            # Refresh only the ggit source so this is quick, then upgrade.
+            steps = [
+                ["sudo", "apt-get", "update",
+                 "-o", "Dir::Etc::sourcelist=" + sources,
+                 "-o", "Dir::Etc::sourceparts=-",
+                 "-o", "APT::Get::List-Cleanup=0"],
+                ["sudo", "apt-get", "install", "--only-upgrade", "-y", "ggit"],
+            ]
+            for cmd in steps:
+                if subprocess.run(cmd).returncode != 0:
+                    sys.exit("ggit: update failed while running: " + " ".join(cmd))
+        else:
+            # Installed from a locally built .deb: rebuild from the latest source.
+            run_installer("--deb")
+    else:
+        run_installer("--user")
+    v = subprocess.run(["ggit", "--version"], capture_output=True, text=True)
+    print("ggit: now at " + (v.stdout.strip() or "unknown version").replace("ggit ", ""))
+    print("Restart any open ggit windows to use the new version.")
+
+
+def run_installer(mode):
+    print("ggit: downloading the latest installer...")
+    cmd = "curl -fsSL %s | bash -s -- %s" % (INSTALLER_URL, mode)
+    if subprocess.run(["bash", "-c", "set -o pipefail; " + cmd]).returncode != 0:
+        sys.exit("ggit: update failed")
+
+
 def main():
     ap = argparse.ArgumentParser(
         description="A modern, friendly git history viewer.",
@@ -454,8 +491,12 @@ def main():
     ap.add_argument("--debug", action="store_true", help="desktop mode: enable the web inspector (right-click)")
     ap.add_argument("--install", action="store_true", help="add ggit to your applications menu")
     ap.add_argument("--uninstall", action="store_true", help="remove ggit from your applications menu")
+    ap.add_argument("--update", action="store_true", help="update ggit to the latest version")
     ap.add_argument("-v", "--version", action="version", version="ggit " + VERSION)
     args = ap.parse_args()
+
+    if args.update:
+        return self_update()
 
     sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
     if args.install or args.uninstall:

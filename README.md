@@ -35,12 +35,14 @@ sudo apt update
 sudo apt install ggit
 ```
 
+To update later, run `ggit --update` (or `sudo apt update && sudo apt upgrade`).
+
 ### Option 3: Build & Install `.deb` from Source
 
 ```bash
 git clone https://github.com/rbshah29/ggit.git
 cd ggit
-make install-deb   # builds dist/ggit_0.1.0_all.deb and runs sudo apt install
+make install-deb   # builds dist/ggit_<version>_all.deb and runs sudo apt install
 ```
 
 *(For a user-local install without `sudo`, run `./install.sh --user`, or to uninstall run `./install.sh --uninstall`.)*
@@ -54,6 +56,7 @@ ggit --pick             # choose a repo with a folder dialog
 ggit --browser          # old behaviour: serve the UI to your web browser
 ggit --install          # add ggit to the applications menu (search "ggit")
 ggit --uninstall        # remove it from the menu
+ggit --update           # update to the latest version
 ```
 
 Run from a terminal, the window detaches so your prompt is free again
