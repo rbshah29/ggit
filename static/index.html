@@ -6,6 +6,7 @@
   <title>ggit</title>
   <link rel="icon" href="/icon.svg">
   <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/learn.css">
   <!--PREFS-->
 </head>
 <body>
@@ -47,8 +48,56 @@
       <select id="scope" title="Which history to show"></select>
     </div>
 
+    <div class="filter-wrap">
+      <button id="filter-btn" class="pill-btn" title="Filter by people, dates, message, files (f)">
+        <svg viewBox="0 0 24 24"><path d="M3 5h18l-7 8.5V19l-4 2v-7.5Z"/></svg>
+        <span>Filters</span><span id="filter-count" class="badge hidden"></span>
+      </button>
+      <div id="filter-pop" class="popover hidden" role="dialog" aria-label="Filters">
+        <div class="pop-sec">
+          <h5>Date</h5>
+          <div class="chips" id="f-presets">
+            <button data-days="">Any time</button>
+            <button data-days="7">7 days</button>
+            <button data-days="30">30 days</button>
+            <button data-days="90">3 months</button>
+            <button data-days="365">1 year</button>
+          </div>
+          <div class="date-row">
+            <label>From <input type="date" id="f-since"></label>
+            <label>To <input type="date" id="f-until"></label>
+          </div>
+        </div>
+        <div class="pop-sec">
+          <h5>People <span class="hint">pick one or more</span></h5>
+          <input id="f-people-q" class="pop-input" type="search" placeholder="Find a person…" autocomplete="off" spellcheck="false">
+          <div id="f-people" class="pick-list"></div>
+        </div>
+        <div class="pop-sec two">
+          <label><h5>Message contains</h5><input id="f-grep" class="pop-input" type="search" placeholder="e.g. fix login" autocomplete="off" spellcheck="false"></label>
+          <label><h5>Touches file / folder</h5><input id="f-path" class="pop-input" type="search" placeholder="e.g. src/ or *.css" autocomplete="off" spellcheck="false"></label>
+        </div>
+        <div class="pop-sec">
+          <h5>Merge commits</h5>
+          <div class="seg" id="f-merges">
+            <button data-v="">Show</button>
+            <button data-v="hide">Hide</button>
+            <button data-v="only">Only merges</button>
+          </div>
+        </div>
+        <div class="pop-foot">
+          <button class="btn" id="f-clear">Clear all</button>
+          <button class="btn primary" id="f-done">Done</button>
+        </div>
+      </div>
+    </div>
+
     <div class="spacer"></div>
 
+    <button id="learn-btn" class="pill-btn" title="Learn git in a safe playground with animated commands (l)">
+      <svg viewBox="0 0 24 24"><path d="M22 9 12 4 2 9l10 5 10-5Z"/><path d="M6 11v5c3 2.5 9 2.5 12 0v-5"/><path d="M22 9v6"/></svg>
+      <span>Learn</span>
+    </button>
     <button id="refresh" class="icon-btn" title="Reload (r)">
       <svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
     </button>
@@ -64,6 +113,10 @@
   <main class="layout">
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-top">
+        <div class="side-tabs" id="side-tabs">
+          <button data-tab="branches" class="on">Branches</button>
+          <button data-tab="people">People</button>
+        </div>
         <input id="ref-filter" type="search" placeholder="Filter branches & tags…" autocomplete="off" spellcheck="false">
       </div>
       <div class="sidebar-hint" id="sidebar-hint">Hover a branch to animate its path</div>
@@ -71,6 +124,7 @@
     </aside>
 
     <section class="history">
+      <div class="filter-bar hidden" id="filter-bar"></div>
       <div class="history-head">
         <div class="col-graph" id="graph-head">Graph</div>
         <div class="col-msg">Commit</div>
@@ -192,6 +246,8 @@
         <span><kbd>p</kbd> go to parent</span>
         <span><kbd>h</kbd> jump to HEAD</span>
         <span><kbd>r</kbd> reload</span>
+        <span><kbd>f</kbd> filters</span>
+        <span><kbd>l</kbd> learn git (playground)</span>
         <span><kbd>Esc</kbd> clear search / trace</span>
       </div>
     </div>
@@ -199,5 +255,6 @@
 
   <div id="toast" class="toast"></div>
   <script src="/app.js"></script>
+  <script src="/learn.js"></script>
 </body>
 </html>

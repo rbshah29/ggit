@@ -123,13 +123,14 @@ def api_refs(repo):
     return refs
 
 
-def api_log(repo, scope, limit):
+def _scope_revs(repo, scope):
+    """Revisions for a scope ('all', 'head' or a full ref name); None if empty."""
     head, _ = head_info(repo)
     if scope == "all":
         revs = ["--branches", "--remotes", "--tags"] + (["HEAD"] if head else [])
     elif scope == "head":
         if not head:
-            return {"commits": [], "truncated": False}
+            return None
         revs = ["HEAD"]
     else:
         valid = {r["full"] for r in api_refs(repo)}
@@ -137,10 +138,41 @@ def api_log(repo, scope, limit):
             raise GitError("Unknown ref: %s" % scope)
         revs = ["--end-of-options", scope]
     if not head and not api_refs(repo):
-        return {"commits": [], "truncated": False}
+        return None
+    return revs
 
-    fmt = "%x1f".join(["%H", "%P", "%an", "%ae", "%at", "%s"])
-    out = git(repo, "log", "--topo-order", "--max-count=%d" % limit, "--format=" + fmt, *revs)
+
+DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _filter_args(filters):
+    """git log options for the active filters ([] when nothing is filtered)."""
+    args = []
+    for email in filters.get("authors") or []:
+        # Fixed-string match on "<email>" so bob@x doesn't also match bob@xy.
+        args.append("--author=<%s>" % email)
+    since, until = filters.get("since"), filters.get("until")
+    if since:
+        if not DATE_RE.match(since):
+            raise GitError("Invalid start date")
+        args.append("--since=%s 00:00:00" % since)
+    if until:
+        if not DATE_RE.match(until):
+            raise GitError("Invalid end date")
+        args.append("--until=%s 23:59:59" % until)
+    if filters.get("grep"):
+        args.append("--grep=" + filters["grep"])
+    merges = filters.get("merges")
+    if merges == "hide":
+        args.append("--no-merges")
+    elif merges == "only":
+        args.append("--merges")
+    if args:
+        args[:0] = ["--fixed-strings", "--regexp-ignore-case"]
+    return args
+
+
+def _parse_log(out):
     commits = []
     for line in out.split("\n"):
         if not line:
@@ -156,7 +188,148 @@ def api_log(repo, scope, limit):
             "time": int(p[4]),
             "subject": "\x1f".join(p[5:]),
         })
-    return {"commits": commits, "truncated": len(commits) >= limit}
+    return commits
+
+
+def _rewrite_parents(repo, revs, commits, since):
+    """Point each kept commit at its nearest kept ancestors, so a filtered
+    history still draws as one connected graph (like gitk does)."""
+    keep = {c["hash"] for c in commits}
+    topo_args = ["log", "--format=%H %P"] + (["--since=%s 00:00:00" % since] if since else [])
+    graph = {}
+    for line in git(repo, *topo_args, *revs).splitlines():
+        parts = line.split()
+        if parts:
+            graph[parts[0]] = parts[1:]
+
+    nearest = {}  # hidden commit -> its nearest kept ancestors
+
+    def resolve(start):
+        stack = [start]
+        while stack:
+            h = stack[-1]
+            if h in nearest:
+                stack.pop()
+                continue
+            todo = [p for p in graph.get(h, ()) if p not in keep and p not in nearest]
+            if todo:
+                stack.extend(todo)
+                continue
+            stack.pop()
+            found = []
+            for p in graph.get(h, ()):
+                for a in ((p,) if p in keep else nearest[p]):
+                    if a not in found:
+                        found.append(a)
+            nearest[h] = tuple(found[:4])
+
+    for c in commits:
+        found = []
+        for p in graph.get(c["hash"], c["parents"]):
+            if p in keep:
+                cands = (p,)
+            else:
+                resolve(p)
+                cands = nearest[p]
+            for a in cands:
+                if a not in found:
+                    found.append(a)
+        c["parents"] = found[:4]
+        c["gap"] = True  # parents may skip hidden commits
+    return commits
+
+
+def api_log(repo, scope, limit, filters=None):
+    filters = filters or {}
+    revs = _scope_revs(repo, scope)
+    if revs is None:
+        return {"commits": [], "truncated": False}
+
+    fmt = "%x1f".join(["%H", "%P", "%an", "%ae", "%at", "%s"])
+    fargs = _filter_args(filters)
+    path = (filters.get("path") or "").strip()
+    pathspec = ["--", path] if path else []
+    out = git(repo, "log", "--topo-order", "--max-count=%d" % limit, "--format=" + fmt,
+              *fargs, *revs, *pathspec)
+    commits = _parse_log(out)
+    if fargs or pathspec:
+        commits = _rewrite_parents(repo, revs, commits, filters.get("since"))
+    return {"commits": commits, "truncated": len(commits) >= limit, "filtered": bool(fargs or pathspec)}
+
+
+_authors_cache = {}
+
+
+def _default_branch(repo, refs):
+    """The branch other branches are compared against: origin/HEAD, main, master or HEAD."""
+    full = {r["full"] for r in refs}
+    target = git(repo, "symbolic-ref", "-q", "refs/remotes/origin/HEAD", check=False).strip()
+    for cand in (target.replace("refs/remotes/origin/", "refs/heads/", 1) if target else "",
+                 target, "refs/heads/main", "refs/heads/master",
+                 "refs/remotes/origin/main", "refs/remotes/origin/master"):
+        if cand and cand in full:
+            return cand
+    _, branch = head_info(repo)
+    return "refs/heads/" + branch if branch else None
+
+
+def api_authors(repo):
+    """Everyone who authored a commit, with the branches holding their work."""
+    refs = api_refs(repo)
+    key = (repo, git(repo, "for-each-ref", "--format=%(refname) %(objectname)").strip(),
+           git(repo, "rev-parse", "-q", "--verify", "HEAD", check=False).strip())
+    if key in _authors_cache:
+        return _authors_cache[key]
+    revs = _scope_revs(repo, "all")
+    if revs is None:
+        return {"base": None, "authors": []}
+
+    people = {}
+    for line in git(repo, "log", "--format=%an%x1f%ae%x1f%at", *revs).splitlines():
+        p = line.split("\x1f")
+        if len(p) != 3:
+            continue
+        name, email, t = p[0], p[1], int(p[2])
+        k = email.lower() or name
+        a = people.get(k)
+        if not a:
+            a = people[k] = {"name": name, "email": email, "count": 0,
+                             "first": t, "last": t, "branches": []}
+        a["count"] += 1
+        if t > a["last"]:
+            a["last"], a["name"] = t, name  # most recent name wins
+        a["first"] = min(a["first"], t)
+
+    # Branches: work on a branch that isn't in the default branch yet.
+    # Remote copies identical to a local branch are skipped.
+    base = _default_branch(repo, refs)
+    local = {r["name"]: r["hash"] for r in refs if r["kind"] == "branch"}
+    branch_refs = [r for r in refs if r["kind"] == "branch" or (
+        r["kind"] == "remote" and local.get(r["name"].split("/", 1)[-1]) != r["hash"])]
+
+    def authors_on(ref):
+        rng = [ref["full"]] if ref["full"] == base else ["^" + base, ref["full"]] if base else [ref["full"]]
+        counts = {}
+        for e in git(repo, "log", "--format=%ae", "--end-of-options", *rng).splitlines():
+            k = e.lower()
+            counts[k] = counts.get(k, 0) + 1
+        return ref, counts
+
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for ref, counts in pool.map(authors_on, branch_refs):
+            for k, n in counts.items():
+                if k in people:
+                    people[k]["branches"].append({
+                        "ref": ref["full"], "name": ref["name"], "kind": ref["kind"],
+                        "hash": ref["hash"], "count": n, "base": ref["full"] == base})
+
+    for a in people.values():
+        a["branches"].sort(key=lambda b: (not b["base"], -b["count"], b["name"]))
+    result = {"base": base, "authors": sorted(people.values(), key=lambda a: (-a["count"], a["name"].lower()))}
+    _authors_cache.clear()
+    _authors_cache[key] = result
+    return result
 
 
 def _parse_files(name_status, numstat):
@@ -363,7 +536,17 @@ def make_handler(ctx):
                 if path == "/api/log":
                     scope = q.get("scope", ["all"])[0]
                     limit = int(q.get("limit", [ctx["limit"]])[0])
-                    return self._json(api_log(repo, scope, max(1, min(limit, 500000))))
+                    filters = {
+                        "authors": q.get("author", []),
+                        "since": q.get("since", [""])[0],
+                        "until": q.get("until", [""])[0],
+                        "grep": q.get("grep", [""])[0],
+                        "path": q.get("path", [""])[0],
+                        "merges": q.get("merges", [""])[0],
+                    }
+                    return self._json(api_log(repo, scope, max(1, min(limit, 500000)), filters))
+                if path == "/api/authors":
+                    return self._json(api_authors(repo))
                 if path.startswith("/api/commit/"):
                     return self._json(api_commit(repo, unquote(path[len("/api/commit/"):])))
                 if path == "/api/worktree":

@@ -59,7 +59,25 @@ const state = {
   introStart: -1e9,        // when the graph "draw-in" animation started
   popAt: -1e9,             // when the selected dot last popped
   pending: 0,              // in-flight API requests (drives the progress bar)
+  filtered: false,         // the loaded history has filters applied
+  filters: { authors: [], since: '', until: '', grep: '', path: '', merges: '' },
+  people: null,            // { base, authors: [{name, email, count, first, last, branches}] }
+  peopleQuery: '',
+  sideTab: 'branches',
 };
+
+const filterCount = () => {
+  const f = state.filters;
+  return (f.authors.length ? 1 : 0) + (f.since || f.until ? 1 : 0) + (f.grep ? 1 : 0) + (f.path ? 1 : 0) + (f.merges ? 1 : 0);
+};
+
+function logQuery() {
+  const f = state.filters;
+  const q = new URLSearchParams({ scope: state.scope, limit: state.limit });
+  for (const a of f.authors) q.append('author', a);
+  for (const k of ['since', 'until', 'grep', 'path', 'merges']) if (f[k]) q.set(k, f[k]);
+  return q.toString();
+}
 
 // ------------------------------------------------------------ helpers
 async function api(path) {
@@ -142,12 +160,14 @@ async function loadAll({ keepScroll = false } = {}) {
     state.repo = repo;
     state.refs = refs;
     buildScopeSelect();
-    const log = await api(`/api/log?scope=${encodeURIComponent(state.scope)}&limit=${state.limit}`);
+    if (state.people || state.sideTab === 'people' || state.filters.authors.length) loadPeople();
+    const log = await api(`/api/log?${logQuery()}`);
     let commits = log.commits;
     state.truncated = log.truncated;
+    state.filtered = !!log.filtered;
 
     // Show uncommitted changes as a pseudo-commit on top of HEAD.
-    if (repo.head && scopeIncludesHead()) {
+    if (repo.head && scopeIncludesHead() && !state.filtered) {
       const status = await api('/api/status');
       if (status.length) {
         commits = [{
@@ -170,6 +190,7 @@ async function loadAll({ keepScroll = false } = {}) {
     applySearch(false);
     renderList(true);
     renderFoot();
+    renderFilterBar();
 
     if (keepScroll) list.scrollTop = scrollTop;
     if (state.selected && state.index.has(state.selected)) {
@@ -178,7 +199,12 @@ async function loadAll({ keepScroll = false } = {}) {
       const start = state.index.has(WORKTREE) ? WORKTREE : state.repo.head;
       if (start && state.index.has(start)) selectCommit(start, { scroll: true });
       else if (state.commits.length) selectCommit(state.commits[0].hash, { scroll: true });
-      else $('#details').innerHTML = '<div class="empty">This repository has no commits yet.</div>';
+      else {
+        state.selected = null;
+        $('#details').innerHTML = state.filtered
+          ? '<div class="empty">No commits match these filters.<br><br><button class="btn" data-clear-filters>Clear filters</button></div>'
+          : '<div class="empty">This repository has no commits yet.</div>';
+      }
     }
     state.fingerprint = (await api('/api/fingerprint')).fingerprint;
   } catch (e) {
@@ -448,15 +474,49 @@ function buildScopeSelect() {
 }
 
 function renderSidebar() {
+  $('#side-tabs').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.tab === state.sideTab));
+  $('#ref-filter').placeholder = state.sideTab === 'people' ? 'Find a person…' : 'Filter branches & tags…';
+  $('#sidebar-hint').textContent = state.sideTab === 'people'
+    ? 'Click people to see their commits & branches'
+    : 'Hover a branch to animate its path';
+  if (state.sideTab === 'people') renderPeople();
+  else renderBranches();
+}
+
+// Branches holding work by the selected people (null when no one is selected).
+function selectedPeopleBranches() {
+  if (!state.filters.authors.length || !state.people) return null;
+  const sel = new Set(state.filters.authors.map((e) => e.toLowerCase()));
+  const refs = new Set();
+  for (const a of state.people.authors) {
+    if (sel.has(a.email.toLowerCase())) for (const b of a.branches) refs.add(b.ref);
+  }
+  return refs;
+}
+
+function selectedNames() {
+  const sel = new Set(state.filters.authors.map((e) => e.toLowerCase()));
+  const names = (state.people?.authors || []).filter((a) => sel.has(a.email.toLowerCase())).map((a) => a.name);
+  return names.length ? names : state.filters.authors;
+}
+
+function renderBranches() {
   const filter = $('#ref-filter').value.trim().toLowerCase();
+  const onlyRefs = selectedPeopleBranches();
+  let html = '';
+  if (onlyRefs) {
+    const names = selectedNames();
+    html += `<div class="side-note">Branches with work by <b>${esc(names.length > 2 ? `${names.length} people` : names.join(' & '))}</b>` +
+      ` <span class="link" data-clear-people>Show all</span></div>`;
+  }
   const groups = [
     ['branch', 'Branches', 'branch'],
     ['remote', 'Remote', 'cloud'],
     ['tag', 'Tags', 'tag'],
   ];
-  let html = '';
   for (const [kind, title, icon] of groups) {
-    const items = state.refs.filter((r) => r.kind === kind && r.name.toLowerCase().includes(filter));
+    const items = state.refs.filter((r) => r.kind === kind && r.name.toLowerCase().includes(filter) &&
+      (!onlyRefs || onlyRefs.has(r.full)));
     items.sort((a, b) => (isCurrent(b) - isCurrent(a)) || a.name.localeCompare(b.name, undefined, { numeric: true }));
     if (kind === 'tag') items.reverse();
     if (!items.length) continue;
@@ -482,19 +542,192 @@ function renderSidebar() {
     }
     html += '</div>';
   }
+  if (onlyRefs && !onlyRefs.size) html += '<div class="empty">All their work is already in the main branch.</div>';
   $('#ref-groups').innerHTML = html || '<div class="empty">No branches or tags</div>';
+}
+
+// ------------------------------------------------------------ people
+async function loadPeople() {
+  if (loadPeople.inflight) return loadPeople.inflight;
+  loadPeople.inflight = (async () => {
+    try {
+      state.people = await api('/api/authors');
+      renderSidebar();
+      renderFilterBar();
+      if (!$('#filter-pop').classList.contains('hidden')) renderPeoplePicker();
+    } catch (e) {
+      if (state.sideTab === 'people') $('#ref-groups').innerHTML = `<div class="error">${esc(e.message)}</div>`;
+    } finally {
+      loadPeople.inflight = null;
+    }
+  })();
+  return loadPeople.inflight;
+}
+
+const isPicked = (email) => state.filters.authors.some((e) => e.toLowerCase() === email.toLowerCase());
+
+function togglePerson(email) {
+  const f = state.filters;
+  f.authors = isPicked(email) ? f.authors.filter((e) => e.toLowerCase() !== email.toLowerCase()) : [...f.authors, email];
+  applyFilters();
+}
+
+function renderPeople() {
+  const box = $('#ref-groups');
+  if (!state.people) {
+    box.innerHTML = '<div class="skeleton side"><div></div><div></div><div></div><div></div></div>';
+    loadPeople();
+    return;
+  }
+  const q = $('#ref-filter').value.trim().toLowerCase();
+  const all = state.people.authors;
+  const list = all.filter((a) => isPicked(a.email) || a.name.toLowerCase().includes(q) || a.email.toLowerCase().includes(q));
+  // Selected people float to the top so their branches are easy to find.
+  list.sort((a, b) => isPicked(b.email) - isPicked(a.email));
+  const nSel = state.filters.authors.length;
+  let html = `<div class="ref-group"><h4><span>${all.length} contributor${all.length === 1 ? '' : 's'}</span>` +
+    (nSel ? `<span class="link" data-clear-people>Clear ${nSel}</span>` : '<span></span>') + '</h4>';
+  for (const a of list) {
+    const on = isPicked(a.email);
+    html += `<div class="person${on ? ' on' : ''}" data-email="${esc(a.email)}" title="${esc(a.name)} <${esc(a.email)}>\nFirst commit ${absTime(a.first)}\nLast commit ${absTime(a.last)}">` +
+      `<span class="check"></span>${avatar(a.name, a.email)}` +
+      `<span class="pinfo"><span class="pname">${esc(a.name)}</span>` +
+      `<span class="pmeta">${a.count.toLocaleString()} commit${a.count === 1 ? '' : 's'} · ${relShort(a.last)} ago</span></span></div>`;
+    if (on) html += personBranches(a);
+  }
+  if (!list.length) html += '<div class="empty">No one matches</div>';
+  box.innerHTML = html + '</div>';
+}
+
+function personBranches(a) {
+  const byFull = new Map(state.refs.map((r) => [r.full, r]));
+  if (!a.branches.length) return '<div class="person-branches"><div class="pb-empty">No branches point at their work</div></div>';
+  let html = '<div class="person-branches">';
+  for (const b of a.branches) {
+    const r = byFull.get(b.ref) || b;
+    const loaded = state.index.has(b.hash);
+    const tip = b.base
+      ? `${b.count} of their commits are in ${b.name} (the main branch)`
+      : `${b.count} commit${b.count === 1 ? '' : 's'} on ${b.name} that aren't in ${state.people.base?.replace(/^refs\/(heads|remotes)\//, '') || 'the main branch'} yet`;
+    html += `<div class="ref-item sm${loaded ? '' : ' missing'}" style="--lane-c:${r.color || 'var(--accent)'}" data-hash="${b.hash}" data-ref="${esc(b.ref)}" title="${esc(tip)}">` +
+      `${b.kind === 'remote' ? '<span class="icon"><i class="ico ico-cloud"></i></span>' : '<span class="lane-swatch"></span>'}` +
+      `<span class="name">${esc(b.name)}${b.base ? ' <span class="base-tag">main</span>' : ''}</span><span class="ab">${b.count}</span></div>`;
+  }
+  return html + '</div>';
 }
 
 function renderFoot() {
   const n = state.commits.filter((c) => c.hash !== WORKTREE).length;
   const branchCount = state.refs.filter((r) => r.kind === 'branch').length;
-  let html = `<span><b>${n.toLocaleString()}</b> commits</span><span>·</span><span><b>${branchCount}</b> local branch${branchCount === 1 ? '' : 'es'}</span>`;
+  let html = state.filtered
+    ? `<span><b>${n.toLocaleString()}</b> commit${n === 1 ? '' : 's'} match your filters</span><button class="btn" data-clear-filters>Clear filters</button>`
+    : `<span><b>${n.toLocaleString()}</b> commits</span><span>·</span><span><b>${branchCount}</b> local branch${branchCount === 1 ? '' : 'es'}</span>`;
   if (state.truncated) {
     html += `<span>— showing the newest ${n.toLocaleString()} only</span><button class="btn" id="load-more">Load more</button>`;
   }
   $('#list-foot').innerHTML = html;
   const more = $('#load-more');
   if (more) more.onclick = () => { state.limit *= 4; loadAll({ keepScroll: true }); };
+}
+
+// ------------------------------------------------------------ filters
+const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const dayFmt = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+const showDay = (iso) => dayFmt.format(new Date(`${iso}T00:00:00`));
+
+function applyFilters() {
+  const f = state.filters;
+  if (f.since && f.until && f.since > f.until) [f.since, f.until] = [f.until, f.since];
+  syncFilterPop();
+  renderFilterBar();
+  renderSidebar();
+  state.limit = 5000;
+  loadAll();
+}
+
+function clearFilters() {
+  state.filters = { authors: [], since: '', until: '', grep: '', path: '', merges: '' };
+  applyFilters();
+}
+
+// Which date preset (in days) matches the current range, or null for a custom range.
+function activePreset() {
+  const f = state.filters;
+  if (!f.since && !f.until) return '';
+  if (f.until) return null;
+  for (const d of [7, 30, 90, 365]) {
+    const t = new Date(); t.setDate(t.getDate() - d);
+    if (isoDay(t) === f.since) return String(d);
+  }
+  return null;
+}
+
+function syncFilterPop() {
+  const f = state.filters;
+  const n = filterCount();
+  $('#filter-count').textContent = n;
+  $('#filter-count').classList.toggle('hidden', !n);
+  $('#filter-btn').classList.toggle('active', n > 0);
+  const preset = activePreset();
+  $('#f-presets').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.days === preset));
+  $('#f-merges').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.v === f.merges));
+  for (const [id, k] of [['#f-since', 'since'], ['#f-until', 'until'], ['#f-grep', 'grep'], ['#f-path', 'path']]) {
+    if ($(id).value !== f[k] && document.activeElement !== $(id)) $(id).value = f[k];
+  }
+  if (!$('#filter-pop').classList.contains('hidden')) renderPeoplePicker();
+}
+
+function renderPeoplePicker() {
+  const box = $('#f-people');
+  if (!state.people) { box.innerHTML = '<div class="pb-empty">Loading people…</div>'; loadPeople(); return; }
+  const q = $('#f-people-q').value.trim().toLowerCase();
+  const list = state.people.authors.filter((a) => a.name.toLowerCase().includes(q) || a.email.toLowerCase().includes(q));
+  list.sort((a, b) => isPicked(b.email) - isPicked(a.email));
+  box.innerHTML = list.slice(0, 200).map((a) =>
+    `<div class="person sm${isPicked(a.email) ? ' on' : ''}" data-email="${esc(a.email)}" title="${esc(a.email)}">` +
+    `<span class="check"></span>${avatar(a.name, a.email)}<span class="pinfo"><span class="pname">${esc(a.name)}</span></span>` +
+    `<span class="ab">${a.count.toLocaleString()}</span></div>`).join('') || '<div class="pb-empty">No one matches</div>';
+}
+
+function openFilters(open = $('#filter-pop').classList.contains('hidden')) {
+  $('#filter-pop').classList.toggle('hidden', !open);
+  $('#filter-btn').classList.toggle('open', open);
+  if (open) { syncFilterPop(); renderPeoplePicker(); }
+}
+
+function renderFilterBar() {
+  const f = state.filters;
+  const bar = $('#filter-bar');
+  const chips = [];
+  const chip = (key, html, title = '') => chips.push(
+    `<span class="fchip" title="${esc(title)}">${html}<button class="x" data-unfilter="${esc(key)}" title="Remove">×</button></span>`);
+  const people = new Map((state.people?.authors || []).map((a) => [a.email.toLowerCase(), a]));
+  for (const e of f.authors) {
+    const a = people.get(e.toLowerCase());
+    chip(`author:${e}`, `${avatar(a ? a.name : e, e)}${esc(a ? a.name : e)}`, e);
+  }
+  if (f.since || f.until) {
+    const preset = activePreset();
+    const label = preset ? `Last ${{ 7: '7 days', 30: '30 days', 90: '3 months', 365: 'year' }[preset]}`
+      : f.since && f.until ? `${showDay(f.since)} – ${showDay(f.until)}`
+      : f.since ? `Since ${showDay(f.since)}` : `Until ${showDay(f.until)}`;
+    chip('date', `<span class="fk">Date</span>${esc(label)}`);
+  }
+  if (f.grep) chip('grep', `<span class="fk">Message</span>“${esc(f.grep)}”`);
+  if (f.path) chip('path', `<span class="fk">File</span>${esc(f.path)}`);
+  if (f.merges) chip('merges', f.merges === 'hide' ? 'No merge commits' : 'Only merge commits');
+  bar.classList.toggle('hidden', !chips.length);
+  bar.innerHTML = chips.length
+    ? `<span class="fb-label">Filtered by</span>${chips.join('')}<span class="link" data-clear-filters>Clear all</span>`
+    : '';
+}
+
+function removeFilter(key) {
+  const f = state.filters;
+  if (key.startsWith('author:')) f.authors = f.authors.filter((e) => e !== key.slice(7));
+  else if (key === 'date') { f.since = ''; f.until = ''; }
+  else f[key] = '';
+  applyFilters();
 }
 
 // ------------------------------------------------------------ list (virtualised)
@@ -704,7 +937,8 @@ function renderCommit(d) {
       ${body ? `<div class="d-body">${esc(body)}</div>` : ''}
       <div class="meta">
         <span class="k">Author</span>
-        <span class="who">${avatar(d.author, d.email)} ${esc(d.author)} <span style="color:var(--faint)">&lt;${esc(d.email)}&gt;</span></span>
+        <span class="who">${avatar(d.author, d.email)} ${esc(d.author)} <span style="color:var(--faint)">&lt;${esc(d.email)}&gt;</span>
+          <span class="link who-filter" data-person="${esc(d.email)}" title="Show only commits by ${esc(d.author)}">${isPicked(d.email) ? 'Filtered ✓' : 'Only their commits'}</span></span>
         <span class="k">Date</span>
         <span>${absTime(d.time)} <span style="color:var(--faint)">(${relTime(d.time)})</span></span>
         ${sameCommitter ? '' : `<span class="k" title="Who applied the commit (differs after rebase, cherry-pick or patches)">Committed by</span>
@@ -873,6 +1107,9 @@ function wireEvents() {
 
   // Sidebar branch click & hover branch-path animation
   $('#ref-groups').addEventListener('click', (e) => {
+    if (e.target.closest('[data-clear-people]')) { state.filters.authors = []; applyFilters(); return; }
+    const person = e.target.closest('.person');
+    if (person) { togglePerson(person.dataset.email); return; }
     const item = e.target.closest('.ref-item');
     if (!item) return;
     if (state.index.has(item.dataset.hash)) selectCommit(item.dataset.hash, { scroll: true });
@@ -893,6 +1130,56 @@ function wireEvents() {
     }
   });
   $('#ref-filter').addEventListener('input', renderSidebar);
+  $('#side-tabs').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b || b.dataset.tab === state.sideTab) return;
+    state.sideTab = b.dataset.tab;
+    $('#ref-filter').value = '';
+    renderSidebar();
+  });
+
+  // Filters popover.
+  $('#filter-btn').onclick = (e) => { e.stopPropagation(); openFilters(); };
+  $('#f-done').onclick = () => openFilters(false);
+  $('#f-clear').onclick = clearFilters;
+  document.addEventListener('mousedown', (e) => {
+    if (!$('#filter-pop').classList.contains('hidden') && !e.target.closest('.filter-wrap')) openFilters(false);
+  });
+  $('#f-presets').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    const f = state.filters;
+    f.until = '';
+    if (b.dataset.days) { const t = new Date(); t.setDate(t.getDate() - +b.dataset.days); f.since = isoDay(t); }
+    else f.since = '';
+    applyFilters();
+  });
+  $('#f-merges').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (b) { state.filters.merges = b.dataset.v; applyFilters(); }
+  });
+  for (const [id, k] of [['#f-since', 'since'], ['#f-until', 'until']]) {
+    $(id).addEventListener('change', () => { state.filters[k] = $(id).value; applyFilters(); });
+  }
+  for (const [id, k] of [['#f-grep', 'grep'], ['#f-path', 'path']]) {
+    let t;
+    $(id).addEventListener('input', () => {
+      clearTimeout(t);
+      t = setTimeout(() => { if (state.filters[k] !== $(id).value.trim()) { state.filters[k] = $(id).value.trim(); applyFilters(); } }, 450);
+    });
+  }
+  $('#f-people-q').addEventListener('input', renderPeoplePicker);
+  $('#f-people').addEventListener('click', (e) => {
+    const p = e.target.closest('.person');
+    if (p) togglePerson(p.dataset.email);
+  });
+  $('#filter-bar').addEventListener('click', (e) => {
+    const x = e.target.closest('[data-unfilter]');
+    if (x) removeFilter(x.dataset.unfilter);
+  });
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('[data-clear-filters]')) clearFilters();
+  });
 
   $('#scope').addEventListener('change', (e) => {
     state.scope = e.target.value;
@@ -945,6 +1232,7 @@ function wireEvents() {
       { duration: 600, easing: 'cubic-bezier(.22,1,.36,1)', pseudoElement: '::view-transition-new(root)' }));
   };
   $('#help-btn').onclick = () => $('#help').classList.remove('hidden');
+  $('#learn-btn').onclick = () => window.ggitLearn?.open();
   $('#help-close').onclick = () => $('#help').classList.add('hidden');
   $('#help').onclick = (e) => { if (e.target.id === 'help') $('#help').classList.add('hidden'); };
 
@@ -960,6 +1248,8 @@ function wireEvents() {
       setTimeout(() => { cp.textContent = 'Copy'; cp.classList.remove('done'); }, 1400);
       return;
     }
+    const who = t.closest('[data-person]');
+    if (who) return togglePerson(who.dataset.person);
     const ct = t.closest('[data-contains]');
     if (ct) return showContains(ct.dataset.contains);
     const fr = t.closest('.file-row');
@@ -987,9 +1277,14 @@ function wireEvents() {
       native.postMessage('open');
       return;
     }
+    if (window.ggitLearn?.isOpen()) {
+      if (e.key === 'Escape') window.ggitLearn.close();
+      return;
+    }
     const typing = ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName);
     if (e.key === 'Escape') {
       $('#help').classList.add('hidden');
+      openFilters(false);
       if (state.hoveredRef) { state.hoveredRef = null; queueRender(); }
     }
     if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -1009,6 +1304,8 @@ function wireEvents() {
     } else if (k === 'h' && state.repo.head) selectCommit(state.repo.head, { scroll: true });
     else if (k === 'r') loadAll({ keepScroll: true });
     else if (k === '?') $('#help').classList.remove('hidden');
+    else if (k === 'f') { e.preventDefault(); openFilters(); }
+    else if (k === 'l') { e.preventDefault(); window.ggitLearn?.open(); }
   });
 
   // Resizable details panel.

@@ -9,8 +9,11 @@ A modern, friendly git history viewer — like `gitk`, but easier to read.
 - **Uncommitted changes** shown as a dashed row on top of the graph
 - **Diffs** with line numbers, file list with change bars, large diffs collapsed
 - **Search** across message, author and hash (non-matches are dimmed)
+- **People**: see every contributor, pick one or more to show only their commits and the branches holding their work
+- **Filters**: date range (with quick presets), people, message text, file / folder, and hide or show only merge commits; the graph stays connected while filtered
 - Parent/child navigation, “which branches contain this commit?”, copy hash
 - Dark/light theme, keyboard shortcuts, auto-refresh when the repo changes
+- **Learn mode** (`l` or the *Learn* button): a safe git playground with guided lessons — type real git commands and watch each step animate files and commits between the working directory, staging area, local repository and remote (your actual repo is never touched)
 - Fast: virtualised list handles tens of thousands of commits
 
 Needs Python 3.8+ and git. The desktop window uses GTK 3 + WebKit2GTK via
@@ -74,4 +77,6 @@ Theme, panel width, window size and last repo are saved in `~/.config/ggit/prefs
 | `p` | go to parent |
 | `h` | jump to HEAD |
 | `r` | reload |
+| `f` | open filters |
+| `l` | learn git in the playground |
 | `?` | help: how to read the graph |

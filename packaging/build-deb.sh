@@ -36,6 +36,8 @@ install -m 0644 "$ROOT_DIR/static/app.js" "$BUILD_ROOT/usr/lib/ggit/static/app.j
 install -m 0644 "$ROOT_DIR/static/icon.svg" "$BUILD_ROOT/usr/lib/ggit/static/icon.svg"
 install -m 0644 "$ROOT_DIR/static/index.html" "$BUILD_ROOT/usr/lib/ggit/static/index.html"
 install -m 0644 "$ROOT_DIR/static/style.css" "$BUILD_ROOT/usr/lib/ggit/static/style.css"
+install -m 0644 "$ROOT_DIR/static/learn.js" "$BUILD_ROOT/usr/lib/ggit/static/learn.js"
+install -m 0644 "$ROOT_DIR/static/learn.css" "$BUILD_ROOT/usr/lib/ggit/static/learn.css"
 
 # Symlink executable into /usr/bin
 ln -s ../lib/ggit/ggit.py "$BUILD_ROOT/usr/bin/ggit"
