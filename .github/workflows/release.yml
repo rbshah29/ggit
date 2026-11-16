@@ -38,7 +38,8 @@ jobs:
         if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y dpkg-dev
+          # dpkg-dev: dpkg-scanpackages · apt-utils: apt-ftparchive (not always preinstalled on runners)
+          sudo apt-get install -y dpkg-dev apt-utils
           mkdir -p apt-repo/pool/main
           cp dist/ggit_*.deb apt-repo/pool/main/
           cd apt-repo
